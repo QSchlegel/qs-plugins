@@ -1,0 +1,6 @@
+{
+  "name": "session-viz",
+  "description": "Analyse a Claude Code session for prompting quality and intent, render it as an interactive HTML report, and derive a focused /compact instruction",
+  "version": "0.1.0",
+  "author": { "name": "QSchlegel" }
+}
