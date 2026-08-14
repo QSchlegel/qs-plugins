@@ -24,6 +24,10 @@ Two commands:
 - **`/qtrends`** — analyse *every* session on the machine: friction and craft
   over time, an incident taxonomy, per-project comparison, and the actual
   prompts that had to be re-sent.
+- **`/qteam`** — the optional shared layer: federated Obsidian vaults whose
+  `[[wikilinks]]` resolve across projects and people, and task handoff between
+  teammates. Talks to the hosted stateless MCP; needs `SESSION_VIZ_TOKEN` and
+  `SESSION_VIZ_ACTOR` set, and a session restart.
 
 ```bash
 claude plugin install session-viz@qs-plugins

@@ -1,12 +1,14 @@
 {
   "name": "qs-plugins",
   "description": "Quirin Schlegel's Claude Code plugins",
-  "owner": { "name": "QSchlegel" },
+  "owner": {
+    "name": "QSchlegel"
+  },
   "plugins": [
     {
       "name": "session-viz",
       "source": "./plugins/session-viz",
-      "description": "Session visualiser: per-session prompting quality and a tuned /compact instruction via /qpact, plus corpus-wide friction trends via /qtrends",
+      "description": "Session visualiser: per-session quality via /qpact, corpus-wide trends via /qtrends, and shared vaults plus task handoff via /qteam",
       "category": "productivity"
     }
   ]
