@@ -1,14 +1,26 @@
-# qs-plugins
+# qs-plugins — moved
 
-A Claude Code plugin marketplace, plus the optional hosted backend for session-viz.
+Both halves of this repository now live on their own:
 
+| | |
+|---|---|
+| **[QSchlegel/session-viz](https://github.com/QSchlegel/session-viz)** | the plugin — public, offline-first, seven commands |
+| **[QSchlegel/session-viz-cloud](https://github.com/QSchlegel/session-viz-cloud)** | the optional hosted backend |
+
+Install from the new marketplace:
+
+```bash
+claude plugin marketplace add QSchlegel/session-viz
+claude plugin install session-viz@session-viz
 ```
-plugins/session-viz/   the plugin — /qpact and /qtrends, fully local
-cloud/                 optional hosted side: API, landing page, pricing model
-```
 
-Everything in `cloud/` is optional. The plugin works completely without it, and no data
-leaves your machine unless you explicitly push it.
+If you installed from here, switch over with `claude plugin marketplace remove qs-plugins`
+first — otherwise both marketplaces offer a plugin called `session-viz` and you will have to
+disambiguate on every install.
+
+The copies under `plugins/` and `cloud/` are frozen at the point of the split and are no
+longer updated. They are kept only so existing checkouts and the open pull request do not
+break; read them as history, not as the current source.
 
 ```bash
 claude plugin marketplace add QSchlegel/qs-plugins
