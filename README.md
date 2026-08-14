@@ -24,6 +24,16 @@ Two commands:
 - **`/qtrends`** — analyse *every* session on the machine: friction and craft
   over time, an incident taxonomy, per-project comparison, and the actual
   prompts that had to be re-sent.
+- **`/qruns`** — the delivery ledger for autonomous work: every scheduled run,
+  subagent and workflow agent, and what each actually shipped. This is the half
+  of the corpus the other commands deliberately discard.
+- **`/qcost`** — where the tokens go. Output is a rounding error; cache-read is
+  almost the whole bill and appears in no per-session view.
+- **`/qship`** — turns prompts you keep retyping into slash commands, after
+  separating rituals from prompts that simply failed and got re-sent.
+- **`/qdoctor`** — audits a repo's Claude Code config against your *own* other
+  repos. The check that matters most is whether permissions cover Write:
+  headless runs cannot answer a prompt, so without it they die at the first write.
 - **`/qteam`** — the optional shared layer: federated Obsidian vaults whose
   `[[wikilinks]]` resolve across projects and people, and task handoff between
   teammates. Talks to the hosted stateless MCP; needs `SESSION_VIZ_TOKEN` and

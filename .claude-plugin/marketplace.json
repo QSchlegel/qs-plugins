@@ -8,7 +8,7 @@
     {
       "name": "session-viz",
       "source": "./plugins/session-viz",
-      "description": "Session visualiser: per-session quality via /qpact, corpus-wide trends via /qtrends, and shared vaults plus task handoff via /qteam",
+      "description": "Session and agent observability: /qpact /qtrends /qruns /qcost /qship /qdoctor /qteam",
       "category": "productivity"
     }
   ]
