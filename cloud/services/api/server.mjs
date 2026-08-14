@@ -29,6 +29,11 @@ import {
   passkeyChallenge, passkeyRegister, passkeyLogin, tenantForEmail,
   loadAccount, listMembers, inviteMember, setRole, setStatus,
 } from './auth.mjs'
+import {
+  initOps, isOperator, operatorEmails, opsOverview, opsHtml,
+  setTenantStatus, deleteTenant, readAudit, audit,
+} from './ops.mjs'
+import { initMail, sendMail, mailHealth, mailLog, mailConfig } from './mail.mjs'
 
 const PORT = Number(process.env.PORT || 8787)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
@@ -340,6 +345,8 @@ const storeType = await initStore()
 // that nothing can join it to the person-blind `finding` table.
 await initCollab(pool)
 await initAuth(pool)
+await initOps(pool)
+await initMail(pool)
 const AMEM = authMem()
 // Distinct-tenant floor. Once several customers contribute, a cell drawn from
 // one tenant is that tenant's number wearing a crowd's clothes.
@@ -349,7 +356,11 @@ const ORIGIN = process.env.ORIGIN || ''
 // In production this hands off to an email provider. Unset, the code is logged
 // so a self-hosted deployment is usable on day one — and the log line says so.
 const deliverOtp = async ({ email, code, expiresInMinutes }) => {
-  console.log(`[otp] ${email} -> ${code} (valid ${expiresInMinutes}m) — set an email provider before production`)
+  const r = await sendMail(pool, {
+    template: 'auth.otp', to: email, critical: true,
+    vars: { code, minutes: expiresInMinutes },
+  })
+  if (r.dryRun) console.log(`[otp] ${email} -> ${code} (valid ${expiresInMinutes}m) — RESEND_API_KEY unset`)
 }
 
 // The landing page is on the apex and the API on a subdomain, so every browser
@@ -377,6 +388,8 @@ const server = http.createServer(async (req, res) => {
         schema: SCHEMA_VERSION, live: liveStats(),
         planes: { a: 'finding (person-blind)', b: 'collab_* (identity-bearing, cannot join a)' },
         auth: { methods: ['email-otp', 'passkey'], multiTenant: true, minTenants: MIN_TENANTS },
+        mail: await mailHealth(pool),
+        levels: { l0: 'operator', l1: 'tenant admin', l2: 'member' },
       })
     }
 
@@ -406,6 +419,65 @@ const server = http.createServer(async (req, res) => {
       return json(res, 404, { error: 'not found' })
     }
 
+    // ---------------- L0 operator console ----------------------------------
+    // Operator identity comes from the signed-in session, never from a header
+    // or a query parameter — a bearer token that happens to be valid is not an
+    // operator claim.
+    if (url.pathname === '/ops' || url.pathname.startsWith('/v1/ops')) {
+      const sess = await resolveSession(pool, AMEM, bearer(req) || url.searchParams.get('token'))
+      const op = sess && isOperator(sess.email)
+      if (url.pathname === '/ops' && !op) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        return res.end(`<!doctype html><meta charset="utf-8"><title>ops</title>
+<body style="font:15px/1.6 ui-sans-serif;background:#16151a;color:#ece9e4;padding:60px 24px;max-width:60ch;margin:0 auto">
+<h1 style="font-size:19px">Operator console</h1>
+<p style="color:#9b968d">Sign in at <a href="https://session-viz.com" style="color:#ff8a4c">session-viz.com</a>
+with an operator account, then return here. The console reads your session token from this browser.</p>
+<p style="color:#9b968d;font:12px/1.6 ui-monospace">operators: ${esc(operatorEmails().join(', '))}</p>
+<script>const t=localStorage.getItem('sv-session');if(t)location.replace('/ops?token='+encodeURIComponent(t))</script>
+</body>`)
+      }
+      if (!op) return json(res, 403, { error: 'operator access required' })
+
+      if (url.pathname === '/ops') {
+        const rows = await allFindings()
+        const ref = buildReference(rows)
+        const o = await opsOverview(pool, { findings: rows.length, gate: ref.gate, mail: await mailHealth(pool) })
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'x-robots-tag': 'noindex' })
+        return res.end(opsHtml(o, { audit: await readAudit(pool), me: sess.email }))
+      }
+
+      const body = req.method === 'POST' ? await (async () => { try { return JSON.parse(await readBody(req)) } catch { return {} } })() : {}
+      try {
+        if (req.method === 'GET' && url.pathname === '/v1/ops/overview') {
+          const rows = await allFindings()
+          return json(res, 200, await opsOverview(pool, { findings: rows.length, gate: buildReference(rows).gate, mail: await mailHealth(pool) }))
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/ops/audit')
+          return json(res, 200, await readAudit(pool))
+        if (req.method === 'GET' && url.pathname === '/v1/ops/mail')
+          return json(res, 200, { health: await mailHealth(pool), recent: await mailLog(pool, 100) })
+        if (req.method === 'POST' && url.pathname === '/v1/ops/mail/test') {
+          const r = await sendMail(pool, { template: 'auth.new-device', to: sess.email,
+            vars: { method: 'operator test', when: new Date().toISOString().slice(0, 16).replace('T', ' ') } })
+          await audit(pool, { actor: sess.email, action: 'mail.test', subject: sess.email, detail: r })
+          return json(res, 200, r)
+        }
+        if (req.method === 'POST' && url.pathname === '/v1/ops/tenant/status')
+          return json(res, 200, await setTenantStatus(pool, { actor: sess.email, tenant: body.tenant, status: body.status, note: body.note }))
+        if (req.method === 'POST' && url.pathname === '/v1/ops/tenant/delete') {
+          // Two-key rule: the caller must name the tenant twice, so a mistyped
+          // id cannot delete the wrong customer.
+          if (body.confirm !== body.tenant) return json(res, 400, { error: 'confirm must repeat the tenant id' })
+          return json(res, 200, await deleteTenant(pool, { actor: sess.email, tenant: body.tenant, alsoFindings: !!body.alsoFindings }))
+        }
+      } catch (e) {
+        await audit(pool, { actor: sess.email, action: 'error', subject: url.pathname, detail: { message: e.message } })
+        return json(res, 400, { error: e.message })
+      }
+      return json(res, 404, { error: 'not found' })
+    }
+
     // ---------------- L1 team administration -------------------------------
     // Every route here loads the caller's account server-side and checks the
     // role there. The UI decides what to show; it never decides what is allowed.
@@ -418,12 +490,26 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && url.pathname === '/v1/team')
           return json(res, 200, { tenant: sess.tenant, you: { id: me.id, email: me.email, role: me.role },
             members: await listMembers(pool, AMEM, { tenant: sess.tenant }) })
-        if (req.method === 'POST' && url.pathname === '/v1/team/invite')
-          return json(res, 200, await inviteMember(pool, AMEM, { admin: me, email: body.email, role: body.role }))
-        if (req.method === 'POST' && url.pathname === '/v1/team/role')
-          return json(res, 200, await setRole(pool, AMEM, { admin: me, accountId: body.accountId, role: body.role }))
-        if (req.method === 'POST' && url.pathname === '/v1/team/status')
-          return json(res, 200, await setStatus(pool, AMEM, { admin: me, accountId: body.accountId, status: body.status }))
+        if (req.method === 'POST' && url.pathname === '/v1/team/invite') {
+          const out = await inviteMember(pool, AMEM, { admin: me, email: body.email, role: body.role })
+          await sendMail(pool, { template: 'team.invited', to: out.invited, tenant: out.tenant,
+            vars: { inviter: me.email, tenant: out.tenant, role: out.role } })
+          return json(res, 200, out)
+        }
+        if (req.method === 'POST' && url.pathname === '/v1/team/role') {
+          const out = await setRole(pool, AMEM, { admin: me, accountId: body.accountId, role: body.role })
+          const t = await loadAccount(pool, AMEM, body.accountId)
+          if (t) await sendMail(pool, { template: 'team.role-changed', to: t.email, tenant: sess.tenant,
+            vars: { role: out.role, tenant: sess.tenant, by: me.email } })
+          return json(res, 200, out)
+        }
+        if (req.method === 'POST' && url.pathname === '/v1/team/status') {
+          const t = await loadAccount(pool, AMEM, body.accountId)
+          const out = await setStatus(pool, AMEM, { admin: me, accountId: body.accountId, status: body.status })
+          if (t && out.status === 'suspended') await sendMail(pool, { template: 'team.suspended', to: t.email,
+            tenant: sess.tenant, vars: { tenant: sess.tenant, by: me.email } })
+          return json(res, 200, out)
+        }
       } catch (e) { return json(res, 403, { error: e.message }) }
       return json(res, 404, { error: 'not found' })
     }
@@ -489,7 +575,14 @@ const server = http.createServer(async (req, res) => {
         if (!actor) return json(res, 400, { error: 'X-Actor required' })
         const [, , , id, to] = url.pathname.split('/')
         try {
-          return json(res, 200, await transitionTask(pool, { actor, id, to, note: await readBodyJson() }))
+          const note = await readBodyJson()
+          const out = await transitionTask(pool, { actor, id, to, note })
+          // Only the title travels — the brief stays in the app by design.
+          if (to === 'offered' && out.assigned_to && out.assigned_to.includes('@')) {
+            await sendMail(pool, { template: 'task.offered', to: out.assigned_to, tenant: tenantOf(),
+              vars: { from: actor, title: out.title, tenant: tenantOf() } })
+          }
+          return json(res, 200, out)
         } catch (e) { return json(res, 409, { error: e.message }) }
       }
       if (req.method === 'GET' && url.pathname === '/v1/events')
@@ -581,6 +674,15 @@ const server = http.createServer(async (req, res) => {
         '  POST /v1/team/invite              {email, role}',
         '  POST /v1/team/role                {accountId, role}',
         '  POST /v1/team/status              {accountId, status}',
+        '',
+        'OPS — L0 operator, metadata only, every action audited',
+        '  GET  /ops                         console (operator session)',
+        '  GET  /v1/ops/overview',
+        '  GET  /v1/ops/audit',
+        '  POST /v1/ops/tenant/status        {tenant, status, note}',
+        '  POST /v1/ops/tenant/delete        {tenant, confirm, alsoFindings}',
+        '  GET  /v1/ops/mail                 delivery health + last 100 sends',
+        '  POST /v1/ops/mail/test            send yourself a test',
         '',
       ].join('\n'))
     }

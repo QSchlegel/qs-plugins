@@ -50,6 +50,36 @@ static files. Both currently live in the Railway project `session-viz-fleet`, wi
 | `COLLAB_TOKEN` | B | vaults, tasks, live sync, MCP |
 | `K_GATE` | A | suppression threshold, default 5 |
 | `ED25519_PRIVATE_PEM` | A | stable signing key; ephemeral per boot if unset |
+| `OPERATOR_EMAILS` | ops | comma-separated; defaults to `mail@quirinschlegel.com` |
+| `MIN_TENANTS` | A | distinct-tenant floor for a reference cell, default 3 |
+| `RESEND_API_KEY` | mail | unset ⇒ dry-run, everything logged instead of sent |
+| `MAIL_FROM` / `MAIL_REPLY_TO` | mail | sender identity |
+| `APP_URL` | mail | link target in emails, default `https://session-viz.com` |
+| `RP_ID` / `ORIGIN` | auth | WebAuthn relying party and expected origin |
+| `ALLOWED_ORIGINS` | api | CORS allow-list for the browser client |
+
+## Three levels of access
+
+| Level | Who | Sees |
+|---|---|---|
+| L0 operator | us | operational metadata across tenants — counts, usage, gate health. **Never customer content.** |
+| L1 tenant admin | the customer | their own workspace: members, invites, roles, suspension |
+| L2 member | invited user | their own vaults and tasks |
+
+`assertMetadataOnly()` checks every operator query against a content deny-list at
+boot, and `assertNoContent()` does the same for email templates. Both refuse to start
+the service rather than leak.
+
+## Email
+
+Resend, with ten triggers: `auth.otp`, `auth.new-device`, `auth.passkey-added`,
+`team.invited`, `team.role-changed`, `team.suspended`, `task.offered`,
+`alert.no-delivery`, `alert.cost-drift`, `digest.weekly`.
+
+Notifications carry the *fact* and a link, never the content — a handoff email
+includes the task title and nothing else. Delivery failures are logged and do not
+roll back the action that triggered them; the OTP is the one exception, because a
+silently unsent code leaves someone unable to sign in.
 
 Deliberately separate tokens: a machine that ships anonymous telemetry should not thereby
 be able to read who is working on what.
