@@ -6,7 +6,7 @@
     {
       "name": "session-viz",
       "source": "./plugins/session-viz",
-      "description": "Session visualiser: prompting-quality metrics, intent breakdown, and a tuned /compact instruction via /qpact",
+      "description": "Session visualiser: per-session prompting quality and a tuned /compact instruction via /qpact, plus corpus-wide friction trends via /qtrends",
       "category": "productivity"
     }
   ]

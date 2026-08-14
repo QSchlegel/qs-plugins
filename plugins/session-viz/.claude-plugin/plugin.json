@@ -1,6 +1,6 @@
 {
   "name": "session-viz",
-  "description": "Analyse a Claude Code session for prompting quality and intent, render it as an interactive HTML report, and derive a focused /compact instruction",
-  "version": "0.1.0",
+  "description": "Analyse Claude Code sessions — one session for prompting quality, intent and a focused /compact instruction, or the whole corpus for friction trends over time — rendered as interactive HTML reports",
+  "version": "0.2.0",
   "author": { "name": "QSchlegel" }
 }

@@ -27,7 +27,11 @@ const PROJECTS = join(homedir(), '.claude', 'projects')
 //   IDE      - wrapped, but genuinely user-initiated (clicking an element in
 //              the IDE integration). Counted as a turn, flagged as non-typed.
 const SLASH = /^<(command-name|command-message|command-args|local-command-caveat|local-command-stdout|local-command-stderr|user-prompt-submit-hook)\b/
-const INJECTED = /^<(task-notification|task-id|tool-use-id|status|output-file|ci-monitor-event|event|diagnostics|usage|result|note|siblings|create-pr-command)\b/
+// `scheduled-task` is a cron firing, not a person typing. It reads like a prompt
+// and lands on the same code path as one, so without it the corpus attributes a
+// recurring job's turns — and whatever friction they carry — to the user.
+const INJECTED =
+  /^<(task-notification|task-id|tool-use-id|status|output-file|ci-monitor-event|event|diagnostics|usage|result|note|siblings|create-pr-command|scheduled-task)\b/
 const IDE = /^<(launch-selected-element|selected-lines|open-file)\b/
 // Compaction leaves two traces in the user role: the <summary> payload itself
 // and the resume preamble that opens the continued session. Neither is typed.
@@ -196,6 +200,168 @@ function scoreSession(turns) {
   }
 }
 
+// ---------------------------------------------------------------- artifacts
+
+// What a session touched, harvested from tool-call inputs rather than from the
+// prompt text. Prompt words are a poor description of a codebase — people say
+// "fix the thing" — whereas the file that was edited and the package that was
+// imported are unambiguous. These are what let one project be related to
+// another.
+//
+// Aggregated per session, not per turn: the question this feeds is "does this
+// repo know about X", which does not need turn resolution and would triple the
+// spine if it carried one.
+
+// Bare specifiers only. A relative import names a file inside the repo, which
+// says nothing about shared knowledge; `three` or `@supabase/supabase-js` does.
+const IMPORT = /(?:^|\n)\s*(?:import[\s\S]{0,200}?from\s*|import\s*|(?:const|let|var)[\s\S]{0,80}?=\s*require\s*\(\s*)['"]([^'".][^'"]*)['"]/g
+const PY_IMPORT = /(?:^|\n)\s*(?:from\s+([a-zA-Z_][\w.]*)\s+import|import\s+([a-zA-Z_][\w.]*))/g
+const INSTALL =
+  /\b(?:npm|pnpm|yarn|bun)\s+(?:add|install|i)\s+((?:@?[\w./-]+\s*)+)|\b(?:pip3?|uv pip)\s+install\s+((?:[\w.[\]=<>-]+\s*)+)|\bcargo\s+add\s+([\w-]+)|\bgo\s+get\s+([\w./-]+)/g
+
+// The Python import pattern also matches TypeScript's `import type {…}` and
+// `import Link from …`, which is how "type" and "Link" end up looking like the
+// most widely shared packages in the corpus. Language is decided by the file
+// being written, not guessed from the content.
+const PY_EXT = new Set(['py', 'pyi', 'ipynb'])
+const JS_EXT = new Set(['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts', 'svelte', 'vue', 'astro'])
+
+// Standard libraries are in every repo that uses the language, so they bridge
+// nothing — a graph edge for `fs` says only "this is JavaScript".
+const STDLIB = new Set([
+  'fs', 'path', 'os', 'url', 'util', 'events', 'stream', 'crypto', 'http', 'https', 'child_process',
+  'readline', 'assert', 'buffer', 'zlib', 'net', 'tls', 'dns', 'querystring', 'timers', 'worker_threads',
+  'perf_hooks', 'process', 'string_decoder', 'v8', 'vm', 'cluster',
+  'sys', 'json', 're', 'time', 'datetime', 'math', 'random', 'pathlib', 'typing', 'collections',
+  'itertools', 'functools', 'subprocess', 'logging', 'argparse', 'dataclasses', 'asyncio', 'unittest',
+  'csv', 'io', 'shutil', 'glob', 'hashlib', 'base64', 'sqlite3', 'urllib', 'threading', 'tempfile',
+  'traceback', 'enum', 'abc', 'copy', 'warnings', 'uuid', 'socket', 'struct', 'textwrap',
+  'string', 'inspect', 'contextlib', 'secrets', 'signal', 'operator', 'statistics', 'decimal',
+])
+
+// Files that identify a stack rather than a feature. A repo with a Dockerfile
+// and a pyproject.toml is describable; one with a main.js is not.
+const STACK_FILES = new Set([
+  'package.json', 'pnpm-lock.yaml', 'tsconfig.json', 'vite.config.ts', 'vite.config.js', 'next.config.js',
+  'next.config.mjs', 'tailwind.config.js', 'tailwind.config.ts', 'svelte.config.js', 'nuxt.config.ts',
+  'dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'makefile', 'justfile',
+  'pyproject.toml', 'requirements.txt', 'setup.py', 'cargo.toml', 'go.mod', 'gemfile', 'composer.json',
+  'terraform.tf', 'main.tf', 'railway.json', 'railway.toml', 'vercel.json', 'netlify.toml', 'fly.toml',
+  'supabase.toml', 'prisma.schema', 'schema.prisma', '.github', 'k8s', 'helm',
+])
+
+// Command-line tools worth graphing. An allow-list rather than "first word of
+// every command": the long tail of ls/cd/echo is noise, and an allow-list is
+// auditable in a way that a stopword list is not.
+const CLI = new Set([
+  'docker', 'docker-compose', 'kubectl', 'helm', 'terraform', 'ansible', 'vagrant',
+  'psql', 'mysql', 'sqlite3', 'redis-cli', 'mongo', 'prisma', 'supabase',
+  'gh', 'git', 'ssh', 'scp', 'rsync', 'tailscale', 'curl', 'wget', 'ffmpeg', 'imagemagick', 'convert',
+  'npm', 'pnpm', 'yarn', 'bun', 'npx', 'node', 'deno', 'tsx', 'vite', 'webpack', 'esbuild',
+  'python', 'python3', 'pip', 'pip3', 'uv', 'poetry', 'pytest', 'ruff', 'mypy', 'jupyter',
+  'cargo', 'rustc', 'go', 'java', 'mvn', 'gradle', 'swift', 'xcodebuild', 'pod',
+  'railway', 'vercel', 'netlify', 'fly', 'aws', 'gcloud', 'az', 'heroku', 'wrangler',
+  'eslint', 'prettier', 'jest', 'vitest', 'playwright', 'cypress', 'blender',
+])
+
+const MAX_SCAN = 20000 // chars of tool content scanned for imports
+const MAX_KEYS = 400 // distinct keys per category, so a pathological session cannot grow unbounded
+
+function bump(map, key, n = 1) {
+  if (!key) return
+  if (!(key in map) && Object.keys(map).length >= MAX_KEYS) return
+  map[key] = (map[key] || 0) + n
+}
+
+// Builtins, relative imports and the repo's own `@/…` path aliases are not
+// shared knowledge — the alias in particular resolves to a directory inside the
+// repo, so it would link projects that have nothing in common but a convention.
+const isPackage = (s) =>
+  s &&
+  !s.startsWith('.') &&
+  !s.startsWith('/') &&
+  !s.startsWith('~') &&
+  !s.startsWith('@/') &&
+  !s.startsWith('node:') &&
+  !STDLIB.has(s) &&
+  s.length > 1 &&
+  s.length < 60
+
+const pkgRoot = (s) => (s.startsWith('@') ? s.split('/').slice(0, 2).join('/') : s.split('/')[0])
+
+const addPackage = (name, out) => {
+  const root = pkgRoot(String(name || '').trim())
+  if (isPackage(root) && !STDLIB.has(root)) bump(out.packages, root)
+}
+
+function harvestImports(text, out, ext) {
+  if (!text) return
+  const body = text.length > MAX_SCAN ? text.slice(0, MAX_SCAN) : text
+  // Unknown extension: assume JS, which is the syntax that cannot false-positive
+  // on the other language's keywords.
+  if (PY_EXT.has(ext)) {
+    for (const m of body.matchAll(PY_IMPORT)) addPackage((m[1] || m[2] || '').split('.')[0], out)
+    return
+  }
+  if (ext && !JS_EXT.has(ext)) return
+  for (const m of body.matchAll(IMPORT)) addPackage(m[1], out)
+}
+
+function harvestBash(cmd, out) {
+  if (!cmd) return
+  const body = cmd.length > MAX_SCAN ? cmd.slice(0, MAX_SCAN) : cmd
+  // Every segment, not just the first: real commands are pipelines and && chains.
+  for (const seg of body.split(/[|;&\n]+|\$\(/)) {
+    const word = seg.trim().split(/\s+/)[0]?.replace(/^.*\//, '')
+    if (CLI.has(word)) bump(out.tools, word)
+  }
+  for (const m of body.matchAll(INSTALL)) {
+    const list = m[1] || m[2] || m[3] || m[4] || ''
+    for (const raw of list.trim().split(/\s+/)) {
+      if (!raw || raw.startsWith('-')) continue
+      // Strip a version constraint, but only after any leading scope: `@scope/x`
+      // keeps its @, `react@18` and `httpx>=0.27` lose the version.
+      const scoped = raw.startsWith('@')
+      const bare = (scoped ? raw.slice(1) : raw).split(/[@=<>~^[]/)[0]
+      addPackage(scoped ? '@' + bare : bare, out)
+    }
+  }
+}
+
+function harvestPath(p, out) {
+  if (typeof p !== 'string' || !p) return
+  const base = p.replace(/^.*\//, '').toLowerCase()
+  if (STACK_FILES.has(base)) bump(out.stack, base)
+  const ext = base.includes('.') ? base.replace(/^.*\./, '') : null
+  if (ext && ext.length <= 5 && /^[a-z0-9]+$/.test(ext)) bump(out.extensions, ext)
+  out.fileTouches++
+}
+
+export function harvestTool(block, out) {
+  const i = block.input
+  if (!i || typeof i !== 'object') return
+  const name = block.name
+
+  if (name.startsWith('mcp__')) bump(out.mcp, name.split('__')[1])
+  if (name === 'Skill' && typeof i.skill === 'string') bump(out.skills, i.skill)
+  if (name === 'Bash') harvestBash(i.command, out)
+
+  let ext = null
+  for (const key of ['file_path', 'path', 'notebook_path']) {
+    if (!i[key]) continue
+    harvestPath(i[key], out)
+    const base = String(i[key]).replace(/^.*\//, '').toLowerCase()
+    if (base.includes('.')) ext = base.replace(/^.*\./, '')
+  }
+  // Write content and Edit replacements are where imports live.
+  harvestImports(i.content, out, ext)
+  harvestImports(i.new_string, out, ext)
+}
+
+export function emptyArtifacts() {
+  return { packages: {}, tools: {}, stack: {}, extensions: {}, skills: {}, mcp: {}, fileTouches: 0 }
+}
+
 // ---------------------------------------------------------------- token accum
 
 function emptyTokens() {
@@ -224,6 +390,7 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
     startedAt: null,
     endedAt: null,
     models: {},
+    artifacts: emptyArtifacts(),
     slashCommands: [],
     permissionModes: [],
     totals: {
@@ -264,6 +431,7 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
     firstToolAt: null,
     timeToFirstToolMs: null,
     _tools: {},
+    _models: {},
   })
 
   const closeTurn = (ts) => {
@@ -275,6 +443,15 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
       .sort((a, b) => b.count - a.count)
     current.toolCallCount = current.toolCalls.reduce((n, t) => n + t.count, 0)
     delete current._tools
+    // A turn can span a model switch (/model mid-flight, or a fallback). Keep
+    // the full breakdown, and name the model that did most of the work so the
+    // turn can be attributed to exactly one of them downstream.
+    current.models = Object.entries(current._models)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+    current.model = current.models[0]?.name || null
+    current.mixedModel = current.models.length > 1
+    delete current._models
     session.turns.push(current)
     current = null
   }
@@ -329,6 +506,11 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
         const hasImage = Array.isArray(p) && p.some((b) => b.type === 'image')
         const raw = textOf(p).replace(REMINDER, '').trim()
         if (!raw && !hasImage) break
+        // Background machinery also arrives on this path — a task notification
+        // firing mid-turn is queued exactly like typed steering. It is not human
+        // intent, and counting it opens a phantom turn that inherits whatever
+        // friction the real turn was already carrying.
+        if (INJECTED.test(raw)) break
         closeTurn(ts)
         session.totals.humanTurns++
         session.totals.steeringTurns++
@@ -347,17 +529,22 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
 
       case 'assistant': {
         session.totals.assistantMessages++
+        // `<synthetic>` marks harness-generated assistant records (API error
+        // placeholders and the like), not a model that ran. Counting it would
+        // put a phantom "model" in every per-model comparison.
         const model = rec.message?.model
-        if (model) session.models[model] = (session.models[model] || 0) + 1
+        if (model && model !== '<synthetic>') session.models[model] = (session.models[model] || 0) + 1
         addUsage(session.totals.tokens, rec.message?.usage)
         if (current) {
           addUsage(current.tokens, rec.message?.usage)
           current.assistantMessages++
+          if (model && model !== '<synthetic>') current._models[model] = (current._models[model] || 0) + 1
           if (rec.effort) current.effort = rec.effort
         }
         for (const block of rec.message?.content || []) {
           if (block.type !== 'tool_use') continue
           session.totals.toolCalls++
+          harvestTool(block, session.artifacts)
           if (!current) continue
           current._tools[block.name] = (current._tools[block.name] || 0) + 1
           if (!current.firstToolAt) {
@@ -409,7 +596,19 @@ export async function extract(file, { redactText = true, maxPromptChars = 4000 }
 
   // Cross-turn signals. These are the honest quality metrics: they measure what
   // a prompt actually cost rather than how well-written it looks.
-  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+  // Pasted images arrive as identical placeholder text ("[Image: original
+  // 2880x1800, displayed at ...]"), so two unrelated screenshots normalise to
+  // the same key and register as a verbatim repeat — the heaviest deduction in
+  // the model. Stripping the placeholder means a turn that is only an image
+  // falls under the length floor and is never counted, while a turn with an
+  // image *and* a real instruction still compares on the instruction.
+  const norm = (s) =>
+    s
+      .toLowerCase()
+      .replace(/\[image[^\]]*\]/g, ' ')
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
   const seen = new Map()
 
   session.turns.forEach((t, i) => {
