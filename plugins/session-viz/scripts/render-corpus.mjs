@@ -7,7 +7,7 @@
 // optional and carries the model-written reading of it. The visual layer never
 // depends on inference, so the charts stay true even with no advice attached.
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 
@@ -887,7 +887,9 @@ if (isMain) {
   const advice = advicePath ? JSON.parse(readFileSync(advicePath, 'utf8')) : null
   const out = opt('-o') || opt('--out') || '/tmp/qtrends.html'
 
-  writeFileSync(out, render(model, advice))
+  // 0600: the page embeds verbatim prompt text and lands in a shared /tmp.
+  writeFileSync(out, render(model, advice), { mode: 0o600 })
+  chmodSync(out, 0o600) // writeFileSync honours mode only when it creates the file
   console.log(out)
 
   if (argv.includes('--open')) {

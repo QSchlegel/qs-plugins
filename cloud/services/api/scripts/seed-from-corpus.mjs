@@ -14,9 +14,39 @@
 // result resolution and write outcomes — fields the session extractor does
 // not yet compute.
 
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { createInterface } from 'node:readline'
-import { extract, listSessions } from '../../../../plugins/session-viz/scripts/extract.mjs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+// The parser lives in the plugin, which is a separate repository. Resolve it at
+// runtime rather than with a fixed relative path: this file has to work both
+// inside the monorepo checkout and in the standalone cloud repo, where
+// ../../../../plugins/ does not exist. Set SESSION_VIZ_PLUGIN to override.
+const PLUGIN_CANDIDATES = [
+  process.env.SESSION_VIZ_PLUGIN,
+  '../../../../plugins/session-viz/scripts/extract.mjs', // monorepo checkout
+  '../../../../../qs-plugins/plugins/session-viz/scripts/extract.mjs', // sibling checkout
+  join(homedir(), '.claude/plugins/cache/qs-plugins/session-viz/0.4.0/scripts/extract.mjs'),
+].filter(Boolean)
+
+async function loadParser() {
+  const tried = []
+  for (const cand of PLUGIN_CANDIDATES) {
+    const url = cand.startsWith('.') ? new URL(cand, import.meta.url) : pathToFileURL(cand)
+    tried.push(url.pathname)
+    if (!existsSync(url.pathname)) continue
+    return import(url.href)
+  }
+  throw new Error(
+    `cannot locate the session-viz parser (extract.mjs). Checkout the plugin repo\n` +
+      `  git clone git@github.com:QSchlegel/qs-plugins.git\n` +
+      `and point SESSION_VIZ_PLUGIN at plugins/session-viz/scripts/extract.mjs.\nTried:\n  ` +
+      tried.join('\n  '),
+  )
+}
+
+const { extract, listSessions } = await loadParser()
 
 // ---------------------------------------------------------------- helpers
 
