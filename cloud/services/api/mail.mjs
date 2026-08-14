@@ -87,8 +87,12 @@ const codeBlock = (code) =>
 // Every trigger the application can fire. Each returns {subject, html, text};
 // none takes a content field.
 export const TEMPLATES = {
+  // The code is deliberately NOT in the subject. Subjects are persisted to
+  // mail_log and served to operators by GET /v1/ops/mail, so a code in the
+  // subject let an operator start a sign-in for any address and read the code
+  // straight back out. It is prominent in the body, which is never stored.
   'auth.otp': ({ code, minutes, appUrl }) => ({
-    subject: `${code} is your session-viz sign-in code`,
+    subject: 'Your session-viz sign-in code',
     html: shell('Your sign-in code', `
       <p style="margin:0;">Enter this code to finish signing in. It expires in ${esc(minutes)} minutes and can be used once.</p>
       ${codeBlock(code)}
@@ -213,18 +217,31 @@ async function record(pool, row) {
   } catch {}
 }
 
+// Belt and braces on top of the constant subject in auth.otp: even if a future
+// template puts a secret back in its subject line, it will not reach mail_log.
+// Anything logged or persisted goes through here first.
+const SECRET_SUBJECT = new Set(['auth.otp'])
+const safeSubject = (template, subject) =>
+  SECRET_SUBJECT.has(template) ? '[redacted — this template can carry a sign-in code]' : subject
+
 export async function sendMail(pool, { template, to, tenant, vars = {}, critical = false }) {
   const cfg = mailConfig()
   const make = TEMPLATES[template]
   if (!make) throw new Error(`no such template: ${template}`)
   const msg = make({ ...vars, appUrl: cfg.appUrl })
+  const logged = safeSubject(template, msg.subject)
 
   if (!cfg.enabled) {
     // Visible, greppable, and honest about why: a silent no-op here is how a
     // self-hosted install ends up wondering why nobody gets invited.
-    console.log(`[mail:dry] ${template} -> ${to} :: ${msg.subject}`)
+    console.log(`[mail:dry] ${template} -> ${to} :: ${logged}`)
+    // With no provider configured there is no other way to receive the code, so
+    // a self-hosted install would be unable to sign in at all without this. It
+    // is reachable only when RESEND_API_KEY is unset, which is never true in
+    // production — but it does mean any dry-run environment writes codes to its
+    // process log, so do not point one at a real user's address.
     if (template === 'auth.otp') console.log(`[mail:dry] code for ${to}: ${vars.code}`)
-    await record(pool, { template, recipient: to, tenant, subject: msg.subject, status: 'dry-run' })
+    await record(pool, { template, recipient: to, tenant, subject: logged, status: 'dry-run' })
     return { sent: false, dryRun: true, reason: 'RESEND_API_KEY unset' }
   }
 
@@ -240,10 +257,10 @@ export async function sendMail(pool, { template, to, tenant, vars = {}, critical
     })
     const body = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(body?.message || `resend ${r.status}`)
-    await record(pool, { template, recipient: to, tenant, subject: msg.subject, status: 'sent', providerId: body.id })
+    await record(pool, { template, recipient: to, tenant, subject: logged, status: 'sent', providerId: body.id })
     return { sent: true, id: body.id }
   } catch (e) {
-    await record(pool, { template, recipient: to, tenant, subject: msg.subject, status: 'failed', error: e.message })
+    await record(pool, { template, recipient: to, tenant, subject: logged, status: 'failed', error: e.message })
     // A failed notification must not roll back the thing it was notifying about.
     if (critical) throw e
     console.warn(`[mail] ${template} -> ${to} failed: ${e.message}`)

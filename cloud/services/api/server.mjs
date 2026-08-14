@@ -403,10 +403,29 @@ const server = http.createServer(async (req, res) => {
           return json(res, 200, await otpStart(pool, AMEM, { email: body.email, deliver: deliverOtp }))
         if (url.pathname === '/v1/auth/otp/verify')
           return json(res, 200, await otpVerify(pool, AMEM, { email: body.email, code: body.code }))
-        if (url.pathname === '/v1/auth/passkey/challenge')
-          return json(res, 200, { ...(await passkeyChallenge(pool, AMEM, { email: body.email, kind: body.kind === 'register' ? 'register' : 'login' })), rpId: rp })
-        if (url.pathname === '/v1/auth/passkey/register')
-          return json(res, 200, await passkeyRegister(pool, AMEM, { ...body, origin: orig, rpId: rp }))
+        // Enrolment is an authenticated action: adding a passkey binds a new
+        // credential to an existing account, so the caller must already be that
+        // account. Login challenges stay open — establishing who you are is the
+        // whole point of them, and passkeyLogin resolves the account from the
+        // stored credential id rather than from anything the caller asserts.
+        if (url.pathname === '/v1/auth/passkey/challenge') {
+          const kind = body.kind === 'register' ? 'register' : 'login'
+          let email = body.email
+          if (kind === 'register') {
+            const sess = await resolveSession(pool, AMEM, bearer(req))
+            if (!sess) return json(res, 401, { error: 'sign in before adding a passkey' })
+            email = sess.email
+          }
+          return json(res, 200, { ...(await passkeyChallenge(pool, AMEM, { email, kind })), rpId: rp })
+        }
+        if (url.pathname === '/v1/auth/passkey/register') {
+          const sess = await resolveSession(pool, AMEM, bearer(req))
+          if (!sess) return json(res, 401, { error: 'sign in before adding a passkey' })
+          // body.email is not in passkeyRegister's destructure, so it cannot be
+          // read; sessionEmail is spread last as well, so the precedence is
+          // obvious to the next person reading this line.
+          return json(res, 200, await passkeyRegister(pool, AMEM, { ...body, sessionEmail: sess.email, origin: orig, rpId: rp }))
+        }
         if (url.pathname === '/v1/auth/passkey/login')
           return json(res, 200, await passkeyLogin(pool, AMEM, { ...body, origin: orig, rpId: rp }))
         if (url.pathname === '/v1/auth/me') {

@@ -25,6 +25,7 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const OTP_MAX_ATTEMPTS = 5
 const OTP_RATE_WINDOW_MS = 15 * 60 * 1000
 const OTP_RATE_MAX = 5
+const OTP_RESEND_FLOOR_MS = 45 * 1000
 
 const b64u = (buf) => Buffer.from(buf).toString('base64url')
 const fromB64u = (s) => Buffer.from(String(s), 'base64url')
@@ -87,8 +88,16 @@ export async function initAuth(pool) {
     code_hash text not null,
     attempts int not null default 0,
     sent_at timestamptz not null default now(),
-    expires_at timestamptz not null
+    expires_at timestamptz not null,
+    rate int not null default 0,
+    rate_since timestamptz not null default now()
   )`)
+  // These two columns were read by otpStart but never created, so `prev.rate`
+  // was always undefined and the 15-minute cap could not fire — the only limit
+  // actually running was the 45-second floor. Added separately as well as in
+  // the create, because production's otp table already exists.
+  await pool.query(`alter table otp add column if not exists rate int not null default 0`)
+  await pool.query(`alter table otp add column if not exists rate_since timestamptz not null default now()`)
   await pool.query(`create table if not exists passkey(
     cred_id text primary key,
     account text not null references account(id) on delete cascade,
@@ -152,32 +161,75 @@ export const tenantForEmail = (email) => {
 
 // ---------------------------------------------------------------- email OTP
 
+const TOO_SOON = 'a code was just sent — check your inbox'
+const TOO_MANY = 'too many codes requested — wait a few minutes'
+
+// This route is unauthenticated and takes the address from the request body, so
+// it is the one place a stranger can make the service send mail to a third
+// party. The limit is therefore load-bearing twice over: it protects the
+// recipient from being mailbombed with codes they never asked for, and it
+// protects the Resend quota from being drained by anyone with curl.
 export async function otpStart(pool, mem, { email, deliver }) {
   const e = normEmail(email)
   if (!validEmail(e)) throw new Error('invalid email')
   const now = Date.now()
-  const prev = pool
-    ? (await pool.query(`select sent_at, attempts from otp where email=$1`, [e])).rows[0]
-    : mem.otp.get(e)
-  if (prev) {
-    const sent = new Date(prev.sent_at ?? prev.sentAt).getTime()
-    if (now - sent < 45_000) throw new Error('a code was just sent — check your inbox')
-    if (now - sent < OTP_RATE_WINDOW_MS && (prev.rate || 0) >= OTP_RATE_MAX) throw new Error('too many codes requested')
-  }
   // Six digits from rejection-free randomness. Not a token — it is short-lived,
   // single-purpose and rate-limited, and it is never stored in the clear.
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
   const salt = crypto.randomBytes(16).toString('hex')
   const expires = new Date(now + OTP_TTL_MS)
+
   if (pool) {
-    await pool.query(
-      `insert into otp(email,tenant,salt,code_hash,attempts,sent_at,expires_at)
-       values ($1,$2,$3,$4,0,now(),$5)
-       on conflict (email) do update set salt=excluded.salt, code_hash=excluded.code_hash,
-         attempts=0, sent_at=now(), expires_at=excluded.expires_at`,
-      [e, tenantForEmail(e), salt, hashCode(code, salt), expires])
+    // One statement decides and writes. The previous form read sent_at in a
+    // SELECT and then wrote in a separate UPSERT, so two concurrent requests
+    // could both read the same value, both conclude the floor had passed, and
+    // both send. Here the predicate is evaluated against the row being updated
+    // under its own lock: the loser writes nothing, returns nothing, and no
+    // mail goes out. The window counter resets rather than sliding, which is
+    // coarser than a true sliding window and deliberately so — it costs one
+    // column instead of a table of timestamps.
+    const { rows } = await pool.query(
+      `insert into otp(email,tenant,salt,code_hash,attempts,sent_at,expires_at,rate,rate_since)
+       values ($1,$2,$3,$4,0,now(),$5,1,now())
+       on conflict (email) do update set
+         salt = excluded.salt,
+         code_hash = excluded.code_hash,
+         attempts = 0,
+         sent_at = now(),
+         expires_at = excluded.expires_at,
+         rate = case when otp.rate_since < now() - make_interval(secs => $7::double precision)
+                     then 1 else otp.rate + 1 end,
+         rate_since = case when otp.rate_since < now() - make_interval(secs => $7::double precision)
+                           then now() else otp.rate_since end
+       where otp.sent_at < now() - make_interval(secs => $6::double precision)
+         and (otp.rate_since < now() - make_interval(secs => $7::double precision)
+              or otp.rate < $8)
+       returning rate`,
+      [e, tenantForEmail(e), salt, hashCode(code, salt), expires,
+        OTP_RESEND_FLOOR_MS / 1000, OTP_RATE_WINDOW_MS / 1000, OTP_RATE_MAX])
+    if (!rows.length) {
+      // Nothing was written, so nothing may be sent. The extra read exists only
+      // to pick the right message, and only runs on the rejected path.
+      const cur = (await pool.query(`select sent_at from otp where email=$1`, [e])).rows[0]
+      const since = cur ? now - new Date(cur.sent_at).getTime() : Infinity
+      throw new Error(since < OTP_RESEND_FLOOR_MS ? TOO_SOON : TOO_MANY)
+    }
   } else {
-    mem.otp.set(e, { email: e, salt, code_hash: hashCode(code, salt), attempts: 0, sent_at: new Date(now), expires_at: expires, rate: ((prev?.rate) || 0) + 1 })
+    const prev = mem.otp.get(e)
+    let rate = 1, rateSince = now
+    if (prev) {
+      const sent = new Date(prev.sent_at).getTime()
+      const since = new Date(prev.rate_since ?? prev.sent_at).getTime()
+      const fresh = now - since >= OTP_RATE_WINDOW_MS
+      if (now - sent < OTP_RESEND_FLOOR_MS) throw new Error(TOO_SOON)
+      if (!fresh && (prev.rate || 0) >= OTP_RATE_MAX) throw new Error(TOO_MANY)
+      rate = fresh ? 1 : (prev.rate || 0) + 1
+      rateSince = fresh ? now : since
+    }
+    mem.otp.set(e, {
+      email: e, salt, code_hash: hashCode(code, salt), attempts: 0,
+      sent_at: new Date(now), expires_at: expires, rate, rate_since: new Date(rateSince),
+    })
   }
   await deliver({ email: e, code, expiresInMinutes: OTP_TTL_MS / 60000 })
   return { sent: true, expiresAt: expires.toISOString() }
@@ -359,10 +411,26 @@ const takeChallenge = async (pool, mem, id, kind) => {
   return row
 }
 
-export async function passkeyRegister(pool, mem, { challengeId, email, credential, origin, rpId, label }) {
+// The address is taken from the caller's session and from nowhere else.
+//
+// This previously read `email || ch.email`, preferring an address supplied in
+// the request body. Nothing on this path proves control of that address: the
+// route is unauthenticated, the clientData origin and the rpIdHash are fields
+// the caller writes into its own payload, and the attestation statement is
+// never verified — so a plain HTTP client could mint a credential locally,
+// bind it to any address including a sitting tenant admin's, and then sign in
+// as them through passkeyLogin. issueSession upserts on email, so the target
+// did not even have to be a new account. No mail was sent, so it was silent.
+//
+// `sessionEmail` is supplied by the route from a resolved bearer token. Any
+// `email` in the body is ignored — it is not in the destructure at all.
+export async function passkeyRegister(pool, mem, { challengeId, sessionEmail, credential, origin, rpId, label }) {
+  const e = normEmail(sessionEmail)
+  if (!validEmail(e)) throw new Error('sign in before adding a passkey')
   const ch = await takeChallenge(pool, mem, challengeId, 'register')
-  const e = normEmail(email || ch.email)
-  if (!validEmail(e)) throw new Error('invalid email')
+  // Defence in depth: the challenge is minted against the signed-in address, so
+  // a challenge fetched by one account cannot be redeemed by another.
+  if (ch.email && normEmail(ch.email) !== e) throw new Error('challenge belongs to a different account')
   const cd = JSON.parse(fromB64u(credential.response.clientDataJSON).toString('utf8'))
   if (cd.type !== 'webauthn.create') throw new Error('wrong clientData type')
   if (!constEq(cd.challenge, ch.challenge)) throw new Error('challenge mismatch')
@@ -382,10 +450,15 @@ export async function passkeyRegister(pool, mem, { challengeId, email, credentia
   const { key, alg } = coseToKey(cose)
   const spki = key.export({ type: 'spki', format: 'pem' })
 
-  await issueSession(pool, mem, { email: e, method: 'passkey-enrol' })
+  // No issueSession here any more. It was upserting the account row, which is
+  // what allowed enrolment to conjure an account for an address the caller did
+  // not control — and it minted a second session nobody used. The caller is
+  // already signed in, so the row exists; if it does not, that is a bug worth
+  // failing on rather than papering over with an insert.
   const acct = pool
     ? (await pool.query(`select id from account where email=$1`, [e])).rows[0]
     : [...mem.account.values()].find((a) => a.email === e)
+  if (!acct) throw new Error('no account for this session')
   if (pool) {
     await pool.query(
       `insert into passkey(cred_id,account,public_key,alg,sign_count,label) values ($1,$2,$3,$4,$5,$6)
