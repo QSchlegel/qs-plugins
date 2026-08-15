@@ -7,7 +7,7 @@
 // carries the model-derived TLDR, intent breakdown and the /compact instruction.
 // Keeping them separate means the visual layer never depends on inference.
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 
@@ -324,7 +324,9 @@ if (isMain) {
   const intent = intentPath ? JSON.parse(readFileSync(intentPath, 'utf8')) : null
   const out = opt('-o') || opt('--out') || `/tmp/qpact-${(session.sessionId || 'session').slice(0, 8)}.html`
 
-  writeFileSync(out, render(session, intent))
+  // 0600: the page embeds verbatim prompt text and lands in a shared /tmp.
+  writeFileSync(out, render(session, intent), { mode: 0o600 })
+  chmodSync(out, 0o600) // writeFileSync honours mode only when it creates the file
   console.log(out)
 
   if (argv.includes('--open')) {

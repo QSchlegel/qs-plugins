@@ -1,6 +1,26 @@
-# qs-plugins
+# qs-plugins — moved
 
-A Claude Code plugin marketplace.
+Both halves of this repository now live on their own:
+
+| | |
+|---|---|
+| **[QSchlegel/session-viz](https://github.com/QSchlegel/session-viz)** | the plugin — public, offline-first, seven commands |
+| **[QSchlegel/session-viz-cloud](https://github.com/QSchlegel/session-viz-cloud)** | the optional hosted backend |
+
+Install from the new marketplace:
+
+```bash
+claude plugin marketplace add QSchlegel/session-viz
+claude plugin install session-viz@session-viz
+```
+
+If you installed from here, switch over with `claude plugin marketplace remove qs-plugins`
+first — otherwise both marketplaces offer a plugin called `session-viz` and you will have to
+disambiguate on every install.
+
+The copies under `plugins/` and `cloud/` are frozen at the point of the split and are no
+longer updated. They are kept only so existing checkouts and the open pull request do not
+break; read them as history, not as the current source.
 
 ```bash
 claude plugin marketplace add QSchlegel/qs-plugins
@@ -8,18 +28,37 @@ claude plugin marketplace add QSchlegel/qs-plugins
 
 ## session-viz
 
-Provides **`/qpact`** — analyse the current session, render an interactive HTML
-report into a pop-out window, and derive a `/compact` instruction tuned to what
-the session was actually about.
+Two commands:
+
+- **`/qpact`** — analyse the current session, render an interactive HTML report
+  into a pop-out window, and derive a `/compact` instruction tuned to what the
+  session was actually about.
+- **`/qtrends`** — analyse *every* session on the machine: friction and craft
+  over time, an incident taxonomy, per-project comparison, and the actual
+  prompts that had to be re-sent.
+- **`/qruns`** — the delivery ledger for autonomous work: every scheduled run,
+  subagent and workflow agent, and what each actually shipped. This is the half
+  of the corpus the other commands deliberately discard.
+- **`/qcost`** — where the tokens go. Output is a rounding error; cache-read is
+  almost the whole bill and appears in no per-session view.
+- **`/qship`** — turns prompts you keep retyping into slash commands, after
+  separating rituals from prompts that simply failed and got re-sent.
+- **`/qdoctor`** — audits a repo's Claude Code config against your *own* other
+  repos. The check that matters most is whether permissions cover Write:
+  headless runs cannot answer a prompt, so without it they die at the first write.
+- **`/qteam`** — the optional shared layer: federated Obsidian vaults whose
+  `[[wikilinks]]` resolve across projects and people, and task handoff between
+  teammates. Talks to the hosted stateless MCP; needs `SESSION_VIZ_TOKEN` and
+  `SESSION_VIZ_ACTOR` set, and a session restart.
 
 ```bash
 claude plugin install session-viz@qs-plugins
 ```
 
-Plugin skills register at session start, so start a new session before `/qpact`
-resolves.
+Plugin skills register at session start, so start a new session before the
+commands resolve.
 
-### What it does
+### What `/qpact` does
 
 1. **Extract** — streams the session transcript into a compact turn spine.
    Human turns are only 2–4% of records, so a 42 MB transcript collapses to
@@ -61,6 +100,82 @@ failures being measured. Wasted tokens are reported separately.
 Below ~20 turns the score is reported with low confidence: the outcome signals
 have too little to witness for the number to mean much.
 
+### What `/qtrends` does
+
+Parses every transcript under `~/.claude/projects` — around 600 MB and 60
+sessions in ~2 seconds, so there is no cache to go stale. Only depth-2 files
+(`projects/<slug>/<uuid>.jsonl`) are sessions; the ~1100 files nested under
+`<uuid>/subagents/**` are subagent transcripts and are counted by size only.
+
+It reports a weekly friction/craft trend, model adoption and per-model rates, an
+incident taxonomy with token cost attached, expandable per-project and
+per-session drill-downs, and — most usefully — the actual prompts that were
+re-sent verbatim, paired with the corrections they drew.
+
+Transcripts with no human turns (scheduled-task runs) are excluded and counted
+separately; on this machine that is 23 of 63. Worktrees at
+`<repo>/.claude/worktrees/<name>` roll up into their repository — otherwise one
+repo worked across five worktrees looks like five unrelated projects.
+
+#### Cross-project knowledge graph
+
+An Obsidian-style graph view of what connects your repositories, built from what
+sessions *did* rather than what prompts said: packages imported (parsed out of
+Write/Edit content), CLIs run in Bash, stack files touched, and skills and MCP
+servers invoked.
+
+A topic is drawn only if it bridges **2 to half** of your repositories. Below
+that it describes one repo and connects nothing; above it, it is your default
+toolchain — `npm` and `package.json` spanned ten of sixteen repos here and made
+every pair look related. Dropped topics are listed rather than hidden.
+
+Relatedness between two repos is Jaccard overlap weighted by inverse document
+frequency, so a shared `@prisma/client` counts for roughly three times a shared
+`docker`. That surfaces pairs like `Baustoffe ↔ daemmwerk-newsroom` (prisma,
+psql, schema.prisma, next) instead of "both are Node projects".
+
+The layout is force-directed but computed at build time and seeded on a circle
+by index — no `Math.random`, so the same corpus always draws the same graph.
+Repos with no bridging topic are omitted from the drawing and named separately;
+left in, they are free particles that get flung outward and squash everything
+else into a corner.
+
+#### Why model comparisons are gated too
+
+A model release is confounded with time in the worst possible way: you adopt the
+new model and stop using the old one, so "newer model, less rework" and "you got
+better over those same weeks" are the same rows of data. Here opus-5 shows less
+than half the rework rate of opus-4-8 — and the two never ran at volume in the
+same week, so the gap is unattributable.
+
+So models are compared only *within the weeks both ran at volume* (≥20 turns each
+per week, ≥80 turns per side pooled), then z-tested. Pairs that never overlap are
+reported as not comparable rather than ranked. Turns with no model record — the
+request was aborted before anything ran — are excluded from every per-model rate,
+since they are ~46% rework by construction.
+
+#### Why the correlations are gated
+
+A corpus this size sees roughly 1300 turns at a ~6% rework rate. That supports a
+trend and an incident count. It does not support "prompts phrased like X work
+better", and the naive numbers are worse than useless: long prompts that name
+files and paste code are the ones sent for hard work, so the unadjusted figures
+in this corpus say naming a file *doubles* friction. It marks a hard task, not a
+bad prompt.
+
+So every prompt-form signal is stratified by tool-call count, then gated on four
+conditions — direction consistent across strata, ≥25 turns per arm in ≥2 strata,
+≥8 rework incidents in the treated arm, and |z| ≥ 2 on a two-proportion test.
+Signals that fail are shown with the reason they failed and marked
+`raw figure misleads` where the unadjusted number points the other way.
+
+Most of the time nothing passes. That is the finding, and the report says so
+rather than filling the space with plausible advice.
+
+The trend line has its own floor: at least 6 active weeks and 100 turns at each
+end, otherwise it reports "not measurable" instead of reading a slope off two
+weeks.
+
 ### Using the scripts directly
 
 ```bash
@@ -69,10 +184,37 @@ node plugins/session-viz/scripts/extract.mjs --project my-repo --json > spine.js
 node plugins/session-viz/scripts/render.mjs spine.json --open
 ```
 
+```bash
+node plugins/session-viz/scripts/corpus.mjs
+node plugins/session-viz/scripts/corpus.mjs --json --brief-out brief.json > corpus.json
+node plugins/session-viz/scripts/render-corpus.mjs corpus.json --open
+```
+
+`corpus.mjs` takes `--project <substr>`, `--since <30d|12w|3m|ISO date>` and
+`--limit <n>`; with no `--json` it prints a text summary with sparklines.
+`--brief-out` writes a capped companion model in the same pass — same
+aggregates, long tails trimmed, caps declared under `truncated` — for when
+something needs to read the model rather than render it.
+
 `extract.mjs` redacts API keys, tokens, JWTs and connection strings from prompt
 text by default. Transcripts contain whatever you have pasted into them; review
 before sharing a report.
 
+## Cloud
+
+`cloud/services/api` runs two data planes from one service, kept apart structurally rather
+than by policy:
+
+- **Plane A** — fleet telemetry. Person-blind: closed schema, k-gated aggregates, signed
+  reference table, and no person column anywhere.
+- **Plane B** — collaboration. Federated Obsidian vaults, task handoff, live sync over SSE,
+  and a stateless MCP endpoint. Identity-bearing, because handing work between people
+  requires knowing them.
+
+`assertPlaneSeparation()` runs at boot and refuses to start if a migration ever adds a
+foreign key between them. See [cloud/README.md](cloud/README.md) and
+[cloud/PRICING.md](cloud/PRICING.md).
+
 ## Licence
 
-MIT
+MIT — see [LICENSE](LICENSE).

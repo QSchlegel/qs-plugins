@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "session-viz": {
+      "type": "http",
+      "url": "${SESSION_VIZ_URL:-https://cloud.session-viz.com}/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SESSION_VIZ_TOKEN}",
+        "X-Actor": "${SESSION_VIZ_ACTOR}"
+      }
+    }
+  }
+}

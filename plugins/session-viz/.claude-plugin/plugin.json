@@ -1,6 +1,8 @@
 {
   "name": "session-viz",
-  "description": "Analyse a Claude Code session for prompting quality and intent, render it as an interactive HTML report, and derive a focused /compact instruction",
-  "version": "0.1.0",
-  "author": { "name": "QSchlegel" }
+  "description": "Seven commands over the transcripts Claude Code already writes: per-session quality, corpus trends, the autonomous delivery ledger, token economy, repeat harvesting, config audit, and optional shared vaults with task handoff",
+  "version": "0.4.0",
+  "author": {
+    "name": "QSchlegel"
+  }
 }

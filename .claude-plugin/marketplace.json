@@ -1,12 +1,14 @@
 {
   "name": "qs-plugins",
   "description": "Quirin Schlegel's Claude Code plugins",
-  "owner": { "name": "QSchlegel" },
+  "owner": {
+    "name": "QSchlegel"
+  },
   "plugins": [
     {
       "name": "session-viz",
       "source": "./plugins/session-viz",
-      "description": "Session visualiser: prompting-quality metrics, intent breakdown, and a tuned /compact instruction via /qpact",
+      "description": "Session and agent observability: /qpact /qtrends /qruns /qcost /qship /qdoctor /qteam",
       "category": "productivity"
     }
   ]

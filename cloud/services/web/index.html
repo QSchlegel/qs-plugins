@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="en" data-api="https://cloud.session-viz.com"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>session-viz — measure your agents, not your people</title>
+<meta name="description" content="Observability for Claude Code sessions and autonomous agents. Person-blind by construction, and honest about what it cannot conclude.">
+<link rel="canonical" href="https://session-viz.com/">
+<meta name="theme-color" content="#c2521a" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="session-viz">
+<meta property="og:url" content="https://session-viz.com/">
+<meta property="og:title" content="Measure your agents, not your people.">
+<meta property="og:description" content="Observability for Claude Code sessions and autonomous agents. No person column, k-gated aggregates, and it prints what it declined to conclude.">
+<meta property="og:image" content="https://session-viz.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A grid where every cell is one agent run, coloured by how it ended, with unresolved runs left as visible holes.">
+<meta property="og:locale" content="en_GB">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Measure your agents, not your people.">
+<meta name="twitter:description" content="Observability for Claude Code sessions and autonomous agents. No person column, and it prints what it declined to conclude.">
+<meta name="twitter:image" content="https://session-viz.com/og.png">
+
+<!-- Inline SVG favicon: one accent cell in a nine-cell grid, the product mark in 200 bytes. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2316151a'/%3E%3Cg fill='%235f8a6d'%3E%3Crect x='6' y='6' width='6' height='6' rx='1'/%3E%3Crect x='13' y='6' width='6' height='6' rx='1'/%3E%3Crect x='6' y='13' width='6' height='6' rx='1'/%3E%3Crect x='20' y='13' width='6' height='6' rx='1'/%3E%3Crect x='6' y='20' width='6' height='6' rx='1'/%3E%3Crect x='13' y='20' width='6' height='6' rx='1'/%3E%3C/g%3E%3Crect x='20' y='6' width='6' height='6' rx='1' fill='%23ff8a4c'/%3E%3Crect x='20' y='20' width='6' height='6' rx='1' fill='none' stroke='%236d6878' stroke-width='1.2'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#fbfaf8; --panel:#fff; --ink:#1c1b19; --muted:#6b6862; --line:#e6e2db;
+  --accent:#c2521a; --accent-soft:#fdf0e8; --ok:#2f6b46; --warn:#9a6a12; --bad:#b3261e;
+  --bar:#d9d4cb; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --void:#efece5; --cell-struct:#5f8a6d; --cell-prose:#7d8794; --hatch:#9a958c;
+  --m-b:#4a7fb5; --m-c:#a8628f;
+  --f-b:#4f8f86; --f-c:#6f8f4f; --f-d:#8a7a3f; --f-e:#4a7fb5;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#16151a; --panel:#1e1d23; --ink:#ece9e4; --muted:#9b968d; --line:#302e37;
+  --accent:#ff8a4c; --accent-soft:#2a1d16; --ok:#6fbf8e; --warn:#e0b055; --bad:#ff6b5e;
+  --bar:#3a3742; --void:#0d0c11; --cell-struct:#4c8a63; --cell-prose:#8a93a1; --hatch:#6d6878;
+  --m-b:#6a9fd4; --m-c:#c47ab0;
+  --f-b:#68b3b3; --f-c:#8fbc6b; --f-d:#d9b45c; --f-e:#6a9fd4;
+}}
+:root[data-theme=dark]{
+  --bg:#16151a; --panel:#1e1d23; --ink:#ece9e4; --muted:#9b968d; --line:#302e37;
+  --accent:#ff8a4c; --accent-soft:#2a1d16; --ok:#6fbf8e; --warn:#e0b055; --bad:#ff6b5e;
+  --bar:#3a3742; --void:#0d0c11; --cell-struct:#4c8a63; --cell-prose:#8a93a1; --hatch:#6d6878;
+  --m-b:#6a9fd4; --m-c:#c47ab0;
+  --f-b:#68b3b3; --f-c:#8fbc6b; --f-d:#d9b45c; --f-e:#6a9fd4;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:74px}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Inter,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+a{color:var(--accent)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dim{color:var(--muted)}
+
+nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav .in{max-width:1060px;margin:0 auto;padding:0 22px;height:60px;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:26px;white-space:nowrap}
+nav .links{display:flex;align-items:center;gap:6px;justify-self:center}
+nav .links a{padding:7px 11px;border-radius:7px;font-size:13.5px}
+nav .links a:hover{background:var(--accent-soft);color:var(--ink)}
+nav .acts{display:flex;align-items:center;gap:10px;justify-self:end}
+nav .acts .gh{padding:7px;border-radius:7px}
+nav .acts .gh:hover{background:var(--accent-soft)}
+nav .sep{width:1px;height:20px;background:var(--line)}
+.ic{width:1em;height:1em;flex:none}
+.gh{display:inline-flex;align-items:center;gap:7px;color:var(--muted);text-decoration:none;font-size:13.5px}
+.gh:hover{color:var(--ink)}
+.tier h3{display:flex;align-items:center;gap:10px}
+.tier .go{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.tier h3 .ic{width:17px;height:17px;color:var(--muted)}
+.tier.mid h3 .ic{color:var(--accent)}
+.wcap .ic,.claim .ic{color:var(--muted)}
+nav .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
+nav b{font:700 14px/1 var(--mono);letter-spacing:.1em}
+/* The mark is the run wall in miniature: eight settled cells, one accent, one
+   left hollow — the same "we do not guess the unresolved ones" the product is
+   about. It assembles once on load and replays on hover; it does not loop,
+   because a logo that never settles is a logo that never stops asking for
+   attention. */
+.lg .c{fill:var(--cell-struct);opacity:.9;transform-box:fill-box;transform-origin:center}
+.lg .c.a{fill:var(--accent);opacity:1}
+.lg .c.h{fill:none;stroke:var(--hatch);stroke-width:1.6;opacity:.85}
+.lg{overflow:visible}
+.lg .c{animation:cellin .46s cubic-bezier(.2,.8,.25,1) both;animation-delay:calc(var(--i) * 48ms)}
+/* Only the accent cell keeps moving, and slowly: a single pulsing pixel reads
+   as a live indicator, nine of them read as a screensaver. */
+.lg .c.a{animation:cellin .46s cubic-bezier(.2,.8,.25,1) both,
+                   pulse 3.6s ease-in-out 1.2s infinite}
+/* Idle drift. Each cell gets its own duration and delay from --d/--t so the
+   grid never falls into lockstep — a synchronised grid reads as a loading
+   spinner, a desynchronised one reads as something alive. Values are assigned
+   once from a fixed seed, so the mark is identical on every load. */
+.lg .c.idle{animation:cellin .46s cubic-bezier(.2,.8,.25,1) both,
+            tintshift var(--d,6s) steps(1,end) var(--t,0s) infinite}
+/* steps(1,end) rather than a smooth ease: these are status cells, so they
+   should switch state, not glide between states. Geometry never changes. */
+@keyframes tintshift{
+  0%,58%   {fill:var(--cell-struct);opacity:.9}
+  58%,74%  {fill:var(--cell-prose);opacity:.8}
+  74%,100% {fill:var(--cell-struct);opacity:.9}
+}
+/* The hollow cell breathes a half-beat behind — it is the "unresolved" mark, so
+   it should feel unsettled rather than settled. */
+.lg .c.h{animation:cellin .46s cubic-bezier(.2,.8,.25,1) both,
+                   ghost 3.6s ease-in-out 2s infinite}
+nav .logo:hover .lg .c{animation:cellin .4s cubic-bezier(.2,.8,.25,1) both;animation-delay:calc(var(--i) * 30ms)}
+nav .logo:hover .lg .c.a{animation:cellin .4s cubic-bezier(.2,.8,.25,1) both}
+/* Even the entrance is opacity-only: the mark is a grid of status cells, and a
+   status cell should never be seen to move. */
+@keyframes cellin{from{opacity:0}to{opacity:.9}}
+/* The accent cell blinks between accent and warn — a live indicator changing
+   state, with no scale so the grid stays perfectly still. */
+@keyframes pulse{0%,44%{fill:var(--accent);opacity:1}44%,56%{fill:var(--warn);opacity:.92}56%,100%{fill:var(--accent);opacity:1}}
+@keyframes ghost{0%,100%{opacity:.85}50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.lg .c,.lg .c.a,.lg .c.h,.lg .c.idle{animation:none}}
+nav b i{color:var(--accent);font-style:normal}
+nav .sp{flex:1}
+nav a{font-size:13.5px;color:var(--muted);text-decoration:none}
+nav a:hover{color:var(--ink)}
+/* The nav collapses in a deliberate order: section links first (the page still
+   scrolls), then the source link, then Sign in — never the primary action. */
+@media(max-width:1000px){nav .links{display:none}nav .in{grid-template-columns:auto 1fr auto}}
+@media(max-width:560px){nav .acts .gh,nav .sep{display:none}}
+@media(max-width:420px){nav #signin{display:none}}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff!important;
+  border-radius:7px;padding:9px 16px;font-size:13.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:none;color:var(--ink)!important;border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--muted)}
+
+header.hero{padding:74px 0 10px}
+h1{font-size:clamp(34px,5.4vw,54px);line-height:1.06;letter-spacing:-.025em;margin:0 0 18px;max-width:17ch}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{font-size:18.5px;line-height:1.55;color:var(--muted);max-width:62ch;margin:0 0 26px}
+.cta{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+.cta code{font-family:var(--mono);font-size:13px;background:var(--panel);border:1px solid var(--line);
+  border-radius:7px;padding:9px 13px}
+
+.wallstrip{margin:44px 0 0;background:var(--void);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:hidden}
+.wallstrip svg{display:block;width:100%;height:auto;shape-rendering:crispEdges}
+/* Whole-layer shimmer rather than per-cell: one animated element instead of
+   680, and it cannot be mistaken for individual runs arriving. */
+.wallstrip svg.breathe path{animation:sheen var(--d,8s) steps(1,end) var(--t,0s) infinite}
+@keyframes sheen{0%,70%{opacity:.9}70%,84%{opacity:var(--o,.6)}84%,100%{opacity:.9}}
+@media(prefers-reduced-motion:reduce){.wallstrip svg.breathe path{animation:none}}
+.wcap{display:flex;gap:16px;flex-wrap:wrap;margin-top:11px;font:400 11.5px/1.5 var(--mono);color:var(--muted)}
+.wcap i{display:inline-block;width:9px;height:9px;border-radius:1px;margin-right:5px;vertical-align:-1px}
+
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+  margin:64px 0 16px;font-weight:700}
+h3{font-size:19px;margin:0 0 7px;letter-spacing:-.01em}
+p{margin:0 0 14px}
+
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:860px){.g3,.g2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:20px}
+.card p{font-size:14.5px;color:var(--muted);margin:0}
+.card .k{font:700 10px/1 var(--mono);letter-spacing:.1em;color:var(--accent);text-transform:uppercase;
+  display:block;margin-bottom:10px}
+
+.claims{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.claim{display:grid;grid-template-columns:158px 1fr;gap:18px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.claim:last-child{border-bottom:0}
+@media(max-width:700px){.claim{grid-template-columns:1fr;gap:8px}}
+.claim .n{font:700 26px/1 var(--mono);letter-spacing:-.02em}
+.claim .n.bad{color:var(--bad)} .claim .n.ok{color:var(--ok)}
+.claim .n small{display:block;font:400 10.5px/1.4 var(--mono);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted);margin-top:5px}
+.claim p{margin:0;font-size:14.5px;color:var(--muted)}
+.claim b{color:var(--ink)}
+
+.refuse{border-left:3px solid var(--warn);padding:4px 0 4px 18px;margin:0 0 16px}
+.refuse b{display:block;font-size:15px;margin-bottom:3px}
+.refuse p{font-size:14px;color:var(--muted);margin:0}
+
+pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+  overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--muted);margin:0}
+pre b{color:var(--ink);font-weight:600}
+pre .c{color:var(--accent)}
+
+/* isometric stage — the two planes drawn as actual planes in space */
+.stage{background:var(--void);border:1px solid var(--line);border-radius:12px;
+  padding:4px 8px;margin:0 0 18px;overflow:hidden}
+.stage svg{display:block;width:100%;height:auto}
+.stage .face{transition:opacity .18s}
+.stage .lift{transition:transform .28s cubic-bezier(.2,.7,.2,1)}
+/* Scroll separation. --p runs 0 (stage entering) to 1 (stage centred); the two
+   slabs pull apart along the vertical, so the gap the section is ABOUT opens up
+   as you arrive at it. Presentation only — it moves the camera, never a datum. */
+.stage{--p:0}
+.stage g.planeB{transform:translateY(calc(var(--p) * -34px))}
+.stage g.planeA{transform:translateY(calc(var(--p) * 12px))}
+.stage g.planeA,.stage g.planeB{transition:transform .12s linear}
+/* The slabs float a little, on different clocks. Two objects drifting out of
+   phase is what makes a still image read as depth; matched motion would read
+   as the whole picture sliding. */
+/* The slabs are lit rather than moved: their top face brightens and dims on
+   slightly different clocks, which reads as two powered surfaces without
+   shifting a single coordinate. Position stays owned by scroll and hover. */
+.stage .planeA polygon:nth-child(3){animation:litA 9s ease-in-out infinite}
+.stage .planeB polygon:nth-child(3){animation:litB 7.5s ease-in-out 1.1s infinite}
+@keyframes litA{0%,100%{fill-opacity:.10}50%{fill-opacity:.19}}
+@keyframes litB{0%,100%{fill-opacity:.10}50%{fill-opacity:.21}}
+/* The severed-connector crosses blink, because they are the one warning in
+   the picture and a warning that never changes stops being read. */
+.stage .voidg path{animation:xblink 4.2s steps(1,end) infinite}
+@keyframes xblink{0%,72%{opacity:.9}72%,86%{opacity:.35}86%,100%{opacity:.9}}
+@media(prefers-reduced-motion:reduce){
+  .stage .planeA polygon:nth-child(3),.stage .planeB polygon:nth-child(3),
+  .stage .voidg path{animation:none}
+}
+.stage .voidg{opacity:calc(var(--p) * var(--p));transition:opacity .12s linear}
+@media(prefers-reduced-motion:reduce){
+  .stage g.planeA,.stage g.planeB{transform:none}
+  .stage .voidg{opacity:1}
+}
+.stage g.plane{cursor:default}
+.stage.hoverA g.planeB{opacity:.34}
+.stage.hoverB g.planeA{opacity:.34}
+.stage.hoverA g.planeA .lift{transform:translateY(-7px)}
+.stage.hoverB g.planeB .lift{transform:translateY(-7px)}
+.stage g.plane{transition:opacity .18s}
+.stagecap{margin:2px 4px 6px;font-size:11.5px;line-height:1.5;color:var(--muted);max-width:80ch}
+.iso-t{font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700}
+.iso-s{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.iso-n{font-family:var(--mono);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){.stage .lift{transition:none}}
+
+.planes{display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center}
+@media(max-width:860px){.planes{grid-template-columns:1fr}}
+.plane{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px}
+.plane.a{border-color:var(--ok)} .plane.b{border-color:var(--accent)}
+.plane .t{font:700 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px}
+.plane.a .t{color:var(--ok)} .plane.b .t{color:var(--accent)}
+.plane ul{margin:9px 0 0;padding-left:17px;font-size:13.5px;color:var(--muted);line-height:1.7}
+.gap{text-align:center;font:700 10px/1.5 var(--mono);letter-spacing:.08em;color:var(--bad);
+  border:1px dashed var(--bad);border-radius:8px;padding:12px 10px;text-transform:uppercase}
+
+.steps4{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(max-width:860px){.steps4{grid-template-columns:1fr}}
+.f{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+.fh{display:flex;align-items:center;gap:11px;margin-bottom:10px}
+.fh .fn{font:700 11px/1 var(--mono);letter-spacing:.1em;color:var(--accent);
+  border:1px solid var(--accent);border-radius:5px;padding:4px 7px}
+.fh .ic{width:17px;height:17px;color:var(--muted)}
+.fh h3{margin:0;font-size:18px}
+.f p{font-size:14px;color:var(--muted);margin:0 0 12px}
+.f ul{margin:0;padding-left:17px;font-size:13.5px;color:var(--muted);line-height:1.75}
+.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+@media(max-width:860px){.fgrid{grid-template-columns:1fr}}
+
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:stretch}
+@media(max-width:880px){.tiers{grid-template-columns:1fr}}
+.tier{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;display:flex;flex-direction:column}
+.tier.mid{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.tier .badge{font:700 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);
+  border-radius:999px;padding:3px 8px;align-self:flex-start;margin-bottom:11px}
+.tier h3{font-size:20px;margin:0 0 3px}
+.tier .sub{font-size:13.5px;color:var(--muted);margin:0 0 16px}
+.tier .price{font:700 30px/1 var(--mono);letter-spacing:-.02em;margin:0 0 4px}
+.tier .price small{display:block;font:400 11px/1.5 var(--mono);color:var(--muted);
+  letter-spacing:.05em;text-transform:uppercase;margin-top:6px}
+.tier ul{list-style:none;margin:18px 0 0;padding:0;font-size:14px;color:var(--muted);line-height:1.8;flex:1}
+.tier li{padding-left:20px;position:relative}
+.tier li::before{content:'';position:absolute;left:2px;top:.62em;width:7px;height:7px;
+  border-radius:1px;background:var(--ok)}
+.tier li.no::before{background:none;border:1px solid var(--hatch)}
+.tier .go{margin-top:20px}
+.tier .fine{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.5}
+
+dialog#auth{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);
+  padding:26px;width:min(420px,92vw);box-shadow:0 24px 70px rgba(0,0,0,.28)}
+dialog#auth::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(3px)}
+dialog#auth h3{font-size:22px;margin:0 0 6px}
+dialog#auth .d{font-size:13.5px;color:var(--muted);margin:0 0 18px}
+dialog#auth .d.sm{font-size:12.5px;margin:8px 0 14px}
+dialog#auth .fine{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+dialog#auth label{display:block;font:600 10.5px/1 var(--mono);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 7px}
+dialog#auth input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--ink);font:15px/1 ui-sans-serif,-apple-system,sans-serif;margin-bottom:12px}
+dialog#auth input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+dialog#auth #cd{font-family:var(--mono);font-size:26px;letter-spacing:.36em;text-align:center}
+.btn.full{width:100%;justify-content:center;margin-bottom:9px}
+.lnk{background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer;
+  text-decoration:underline;padding:4px 0}
+.lnk:hover{color:var(--ink)}
+dialog#auth .ax{display:flex;justify-content:flex-end;margin:-10px -8px 0 0}
+dialog#auth .x{background:none;border:0;color:var(--muted);font-size:15px;cursor:pointer;padding:4px 8px}
+dialog#auth .x:hover{color:var(--ink)}
+.msg{font-size:13px;margin:10px 0 0;min-height:1.2em}
+.msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
+nav button.btn{font-family:inherit;cursor:pointer;border:1px solid var(--line)}
+
+footer{margin-top:78px;border-top:1px solid var(--line);padding:26px 0 60px;color:var(--muted);font-size:13px}
+footer .row{display:flex;gap:22px;flex-wrap:wrap;align-items:center}
+footer .sp{flex:1}
+</style></head><body>
+
+<svg width="0" height="0" aria-hidden="true" style="position:absolute" focusable="false"><defs>
+  <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M1.7 3.7h12.6v8.6H1.7zM1.9 4.2 8 8.9l6.1-4.7"/></symbol>
+  <symbol id="i-term" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M1.7 2.7h12.6v10.6H1.7zM4.4 6.2l2.2 2-2.2 2M8.6 10.6h3.2"/></symbol>
+  <symbol id="i-book" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2 2.6h4.1c1 0 1.9.8 1.9 1.9v9c0-.8-.8-1.5-1.9-1.5H2zM14 2.6H9.9C8.9 2.6 8 3.4 8 4.5v9c0-.8.8-1.5 1.9-1.5H14z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 1.8 14.6 5 8 8.2 1.4 5zM1.4 8l6.6 3.2L14.6 8M1.4 11l6.6 3.2L14.6 11"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 1.6 13.4 3.4v4.3c0 3.2-2.2 5.6-5.4 6.7-3.2-1.1-5.4-3.5-5.4-6.7V3.4z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M6 1.8v3.4M10 1.8v3.4M4 5.2h8v2.4A4 4 0 0 1 8 11.6 4 4 0 0 1 4 7.6zM8 11.6v2.6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 16 16">
+    <circle cx="10.6" cy="5.4" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+          d="M8.2 7.8 2.6 13.4M4.6 11.4l1.6 1.6M6.4 9.6l1.5 1.5"/>
+  </symbol>
+  <symbol id="i-arrow" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8h9M8.8 4.3 12.5 8l-3.7 3.7"/></symbol>
+</defs></svg>
+
+<nav><div class="in">
+  <a class="logo" href="#" aria-label="session-viz home">
+    <svg viewBox="0 0 34 34" width="27" height="27" aria-hidden="true">
+      <g class="lg">
+        <rect class="c" x="2"  y="2"  width="8" height="8" rx="1.6" style="--i:0"/>
+        <rect class="c" x="12" y="2"  width="8" height="8" rx="1.6" style="--i:1"/>
+        <rect class="c a" x="22" y="2"  width="8" height="8" rx="1.6" style="--i:2"/>
+        <rect class="c" x="2"  y="12" width="8" height="8" rx="1.6" style="--i:3"/>
+        <rect class="c" x="12" y="12" width="8" height="8" rx="1.6" style="--i:4"/>
+        <rect class="c h" x="22" y="12" width="8" height="8" rx="1.6" style="--i:5"/>
+        <rect class="c" x="2"  y="22" width="8" height="8" rx="1.6" style="--i:6"/>
+        <rect class="c" x="12" y="22" width="8" height="8" rx="1.6" style="--i:7"/>
+        <rect class="c" x="22" y="22" width="8" height="8" rx="1.6" style="--i:8"/>
+      </g>
+    </svg>
+    <b>SESSION<i>·</i>VIZ</b>
+  </a>
+  <div class="links">
+    <a href="#features">How it works</a>
+    <a href="#what">Findings</a>
+    <a href="#planes">Architecture</a>
+    <a href="#refuses">Limits</a>
+    <a href="#pricing">Pricing</a>
+  </div>
+  <div class="acts">
+    <a class="gh" href="https://github.com/QSchlegel/qs-plugins" aria-label="Source on GitHub" title="Source on GitHub"><svg class="ic" style="width:18px;height:18px"><use href="#i-github"/></svg></a>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="btn ghost" id="signin" type="button"><svg class="ic"><use href="#i-key"/></svg>Sign in</button>
+    <a class="btn" href="#start">Get started<svg class="ic"><use href="#i-arrow"/></svg></a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+
+<header class="hero">
+  <h1>Measure your <em>agents</em>, not your people.</h1>
+  <p class="lede">session-viz reads the transcripts Claude Code already writes to your disk and tells you what your
+  sessions and autonomous agents actually did — what shipped, what silently failed, and what it cost. It has no
+  person column, and it prints what it declined to conclude.</p>
+  <div class="cta">
+    <a class="btn" href="#start"><svg class="ic"><use href="#i-term"/></svg>Install the plugin</a>
+    <a class="btn ghost" href="#planes"><svg class="ic"><use href="#i-layers"/></svg>Read the architecture</a>
+    <code>claude plugin install session-viz@qs-plugins</code>
+  </div>
+
+  <div class="wallstrip">
+    <svg viewBox="0 0 1020 96" role="img" aria-label="Every run on one developer's machine over sixty days, coloured by how it ended">
+      <g id="strip"></g>
+    </svg>
+    <div class="wcap">
+      <span><i style="background:var(--cell-struct)"></i>completed · structured</span>
+      <span><i style="background:var(--cell-prose)"></i>completed · prose</span>
+      <span><i style="border:1px solid var(--hatch)"></i>not resolved — shown as a hole, never guessed</span>
+      <span><i style="background:var(--warn)"></i>truncated</span>
+      <span><i style="background:var(--bad)"></i>zombie</span>
+      <span class="dim">one cell = one run · 1,166 runs, 60 days, one machine</span>
+    </div>
+  </div>
+</header>
+
+<h2 id="what">What it found on one developer's machine</h2>
+<div class="claims">
+  <div class="claim">
+    <div class="n bad">0 / 20<small>cron delivery</small></div>
+    <p><b>A scheduled job ran for 30 days, cost real money, and shipped nothing.</b> It announced the same next
+    instalment on every run. Every conventional signal was green — coherent transcripts, correct plans, no errors on
+    five of the runs — and a human walked back into twelve of those sessions without noticing.</p>
+  </div>
+  <div class="claim">
+    <div class="n bad">95.7%<small>of tokens</small></div>
+    <p><b>Almost your entire bill is cache-read</b> — context replayed to the model — not text it generated. It never
+    appears in a per-session view, and on this machine it was <span class="mono">24.19B</span> tokens against
+    <span class="mono">85M</span> of output.</p>
+  </div>
+  <div class="claim">
+    <div class="n">1,102<small>invisible runs</small></div>
+    <p><b>Subagents are the fleet nobody watches.</b> They were 94% of all runs and 99% of autonomous spend. One
+    parent session spawned 347 children; the median parent spawns 26.</p>
+  </div>
+  <div class="claim">
+    <div class="n ok">8.0% <span class="dim" style="font-size:15px">vs</span> 1.2%<small>schema failure</small></div>
+    <p><b>One agent definition failed its caller's schema seven times more often than another.</b> The 95% intervals
+    do not overlap, so the difference is real — and it is a property of a file you can edit, not of a person.</p>
+  </div>
+</div>
+
+<h2 id="planes">Two planes that cannot join</h2>
+<p class="dim" style="max-width:66ch">Fleet observability and a private place to learn are only compatible if the
+boundary between them is a property of the schema rather than a promise in a policy document.</p>
+<div class="stage" id="stage">
+  <svg id="iso" viewBox="0 -104 1000 592" role="img"
+       aria-label="Two data planes drawn in isometric space: a person-blind telemetry plane below, an identity-bearing collaboration plane above, with no connection between them.">
+    <defs>
+      <marker id="ah-w" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+        <polygon points="0 0, 8 3.5, 0 7" fill="var(--warn)"/>
+      </marker>
+      <linearGradient id="voidfade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="var(--bad)" stop-opacity=".22"/>
+        <stop offset="1" stop-color="var(--bad)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <g id="isoroot"></g>
+  </svg>
+  <p class="stagecap">Schematic. The agent families and their proportions on plane&nbsp;A are from the reference
+  corpus; the three-person team on plane&nbsp;B illustrates the supported topology, not a measured headcount.</p>
+</div>
+
+<div class="planes">
+  <div class="plane a">
+    <div class="t">Plane A — telemetry</div>
+    <h3>Person-blind by construction</h3>
+    <ul>
+      <li>Keyed on repo, task, agent definition, config, version — never on a person</li>
+      <li>Closed contribution schema: enums and bounded integers, no free-text field exists</li>
+      <li>k-gated cells; suppressions are counted, never silent</li>
+      <li>Signed reference table served with no request body and no cookie</li>
+    </ul>
+  </div>
+  <div class="gap">no shared key<br>no foreign key<br>boot fails if one appears</div>
+  <div class="plane b">
+    <div class="t">Plane B — collaboration</div>
+    <h3>Identity-bearing, on purpose</h3>
+    <ul>
+      <li>Federated Obsidian vaults: <span class="mono">[[wikilinks]]</span> resolve across projects and people</li>
+      <li>Task handoff with an explicit state machine — nothing lands on you unaccepted</li>
+      <li>Live sync over SSE, and a stateless MCP server for agents</li>
+      <li>Note bodies stay on your machine; only titles, tags and link names are indexed</li>
+    </ul>
+  </div>
+</div>
+<p class="dim" style="margin-top:14px;max-width:66ch">You cannot hand a task from one person to another without
+knowing both. So the collaboration plane knows them — and is structurally unable to be turned back into
+per-person performance measurement, because the join does not exist and the service refuses to start if a
+migration adds one.</p>
+
+<h2 id="refuses">What it refuses to tell you</h2>
+<div class="g2">
+  <div>
+    <div class="refuse"><b>Any per-person rate</b>
+      <p>Structurally uncomputable. There is no person column to group by, so this is not a setting that can be
+      turned on later.</p></div>
+    <div class="refuse"><b>That the newer model is better</b>
+      <p>Adoption replaced the old model wholesale, so there is no week where both ran at volume. The difference is
+      unattributable — not weakly, but not at all.</p></div>
+  </div>
+  <div>
+    <div class="refuse"><b>That your prompting improved</b>
+      <p>On 1,075 turns, not one prompt-form signal survived a workload control. The raw correlations were inverted
+      by task difficulty; naming a file appeared to double friction.</p></div>
+    <div class="refuse"><b>A trend across a format change</b>
+      <p>The transcript format moved twelve times in sixty days. Any window straddling a change point is returned
+      blocked rather than rendered.</p></div>
+  </div>
+</div>
+
+<h2 id="features">What it does, and how</h2>
+<p class="dim" style="max-width:66ch">Four stages. Everything before the last one runs on your machine, and
+the last one is optional.</p>
+
+<div class="steps4">
+  <div class="f">
+    <div class="fh"><span class="fn">01</span><svg class="ic"><use href="#i-term"/></svg><h3>Read</h3></div>
+    <p>Claude Code already writes a JSONL transcript for every session, cron run and subagent. The parser streams
+    all of them — about 600&nbsp;MB in two seconds — so there is no daemon, no cache to go stale and nothing to
+    install beyond the plugin.</p>
+    <ul>
+      <li>Human sessions, scheduled runs, subagents and workflow agents become one <span class="mono">run</span> record</li>
+      <li>Worktrees fold back into their repository</li>
+      <li>Secrets are redacted from prompt text before anything is written</li>
+    </ul>
+  </div>
+  <div class="f">
+    <div class="fh"><span class="fn">02</span><svg class="ic"><use href="#i-layers"/></svg><h3>Classify</h3></div>
+    <p>Each run gets a terminal state and a delivery state from what the transcript actually witnessed — not from
+    a model's opinion of it. A run that ends on a <span class="mono">StructuredOutput</span> call is a success; a
+    naive rule would call it a failure and condemn most of a healthy fleet.</p>
+    <ul>
+      <li>Seven terminal states, and <span class="mono">unknown</span> stays unknown</li>
+      <li>Delivery is tri-state — <span class="mono">wrote_ok</span> is never called delivery without a probe</li>
+      <li>Permission denials are separated from model failures</li>
+    </ul>
+  </div>
+  <div class="f">
+    <div class="fh"><span class="fn">03</span><svg class="ic"><use href="#i-shield"/></svg><h3>Gate</h3></div>
+    <p>Every comparison passes a statistical gate before it is shown. Signals are stratified by workload, models
+    are only compared within weeks both ran at volume, and trends spanning a transcript-format change are blocked
+    rather than drawn.</p>
+    <ul>
+      <li>Two-proportion z-test with an incident floor, not just a sample-size floor</li>
+      <li>k-gated cells; at fleet scale a cell also needs several distinct tenants</li>
+      <li>Whatever fails the gate is listed with the reason, in the Null Book</li>
+    </ul>
+  </div>
+  <div class="f">
+    <div class="fh"><span class="fn">04</span><svg class="ic"><use href="#i-plug"/></svg><h3>Act</h3></div>
+    <p>Findings become tickets, tickets become commits. The optional cloud plane adds federated vaults, task
+    handoff between people, live sync and a stateless MCP endpoint so your agents can use all of it directly.</p>
+    <ul>
+      <li>Config changes are dated events, which makes before/after measurable</li>
+      <li><span class="mono">[[wikilinks]]</span> resolve across projects and across people</li>
+      <li>Handoffs need explicit acceptance — nothing lands on anyone unasked</li>
+    </ul>
+  </div>
+</div>
+
+<div class="fgrid">
+  <div class="card"><span class="k">Run wall</span><p>Every run as one cell, painted only by how it ended.
+  Nothing is aggregated, so nothing can be inflated — and the runs the classifier cannot name are drawn as
+  visible holes rather than smoothed away.</p></div>
+  <div class="card"><span class="k">Delivery ledger</span><p>What your autonomous agents said they would produce,
+  against what exists on disk and in git. This is the part that catches a job running for a month, costing money
+  and shipping nothing while every conventional signal stays green.</p></div>
+  <div class="card"><span class="k">Cost decomposition</span><p>Four token classes, shown linear and log side by
+  side because either alone misleads. Cache-read is almost the whole bill and appears in no per-session view.</p></div>
+  <div class="card"><span class="k">Knowledge graph</span><p>What connects your repositories, built from packages
+  imported and CLIs run rather than from prompt wording. Topics that span everything are dropped: they describe
+  your toolchain, not a relationship.</p></div>
+  <div class="card"><span class="k">Substitution canary</span><p>A detector whose only job is to tell you an
+  improvement was the instrument going blind. It has already caught one in the reference corpus.</p></div>
+  <div class="card"><span class="k">Team and tenancy</span><p>Customer workspaces with their own admins, members
+  they invite, and passwordless sign-in by email code or passkey. No view anywhere resolves to a person's
+  performance.</p></div>
+</div>
+
+<h2 id="pricing">Run it yourself, or let us run it</h2>
+<p class="dim" style="max-width:66ch">The parser and the statistical gates are the credibility, so they stay open
+and local. What you can pay for is not seeing your own data — it is somebody else operating the fleet plane and
+answering the phone.</p>
+<div class="tiers">
+
+  <div class="tier">
+    <h3><svg class="ic"><use href="#i-term"/></svg>RYO</h3>
+    <p class="sub">Roll your own. The whole tool, on your machine.</p>
+    <div class="price">Free<small>MIT · self-hosted</small></div>
+    <ul>
+      <li>Both plugin commands, fully local</li>
+      <li>The control center and every gate</li>
+      <li>Backend deployable to your own Railway, Fly or box</li>
+      <li>Reference table works offline forever</li>
+      <li class="no">You operate it, you upgrade it</li>
+      <li class="no">No SLA, best-effort issues</li>
+    </ul>
+    <a class="btn ghost go" href="#start"><svg class="ic"><use href="#i-term"/></svg>Install the plugin</a>
+    <p class="fine">Nothing is held back. A user who never contributes anything still gets the full local report.</p>
+  </div>
+
+  <div class="tier mid">
+    <span class="badge">Hosted</span>
+    <h3><svg class="ic"><use href="#i-layers"/></svg>Fleet</h3>
+    <p class="sub">We run the collaboration plane and the reference table.</p>
+    <div class="price">Per agent-run<small>usage-based · not per seat</small></div>
+    <ul>
+      <li>Managed backend, Postgres and backups</li>
+      <li>Federated vaults across projects and people</li>
+      <li>Task handoff, live sync, hosted MCP endpoint</li>
+      <li>Signed reference table with a stable key</li>
+      <li>EU region, DPA, deletion on request</li>
+      <li class="no">Still no person column — that is not a tier</li>
+    </ul>
+    <a class="btn go" href="mailto:hello@session-viz.com?subject=Hosted%20fleet"><svg class="ic"><use href="#i-mail"/></svg>Talk to us</a>
+    <p class="fine">Priced on agent-runs because that is the unit the product measures. Counting people would
+    require identifying them, which the telemetry plane is built not to do.</p>
+  </div>
+
+  <div class="tier">
+    <h3><svg class="ic"><use href="#i-shield"/></svg>Support</h3>
+    <p class="sub">For teams putting this in front of a works council.</p>
+    <div class="price">Annual<small>scoped engagement</small></div>
+    <ul>
+      <li>Named contact, response-time commitment</li>
+      <li>Deployment review and upgrade assistance</li>
+      <li>Extraction contract pinned to your CLI versions</li>
+      <li>Co-determination pack: what is measured, what cannot be</li>
+      <li>Custom detectors for your recurring tasks</li>
+      <li>Priority on parser fixes when the format moves</li>
+    </ul>
+    <a class="btn ghost go" href="mailto:hello@session-viz.com?subject=Support%20plan"><svg class="ic"><use href="#i-mail"/></svg>Enquire</a>
+    <p class="fine">The transcript format changed twelve times in sixty days. Keeping a parser current is the
+    single most valuable thing to outsource.</p>
+  </div>
+
+</div>
+
+<h2 id="start">Install</h2>
+<div class="g2">
+  <div>
+    <pre><span class="c">$</span> claude plugin marketplace add QSchlegel/qs-plugins
+<span class="c">$</span> claude plugin install session-viz@qs-plugins
+
+<span class="c">#</span> one session, with a tuned /compact line
+<span class="c">$</span> <b>/qpact</b>
+
+<span class="c">#</span> every session on the machine
+<span class="c">$</span> <b>/qtrends</b></pre>
+    <p class="dim" style="font-size:13.5px;margin-top:12px">Runs entirely locally. 600 MB of transcript parses in
+    about two seconds, so there is no cache and no daemon.</p>
+  </div>
+  <div>
+    <pre><span class="c">#</span> optional: the collaboration plane
+<span class="c">$</span> curl -sX POST $HOST/v1/mcp \
+    -H "authorization: Bearer $TOKEN" \
+    -H "x-actor: you" \
+    -d '{"jsonrpc":"2.0","id":1,
+         "method":"tools/list"}'
+
+<b>vault_list      vault_register</b>
+<b>vault_resolve   vault_dangling</b>
+<b>task_create     task_offer</b>
+<b>task_accept     task_done</b>
+<b>task_list       events_recent</b></pre>
+    <p class="dim" style="font-size:13.5px;margin-top:12px">Stateless MCP over HTTP JSON-RPC. No session to keep,
+    so it survives being moved between machines mid-request.</p>
+  </div>
+</div>
+
+<dialog id="auth" aria-label="Sign in">
+  <form method="dialog" class="ax"><button class="x" aria-label="Close">✕</button></form>
+  <h3>Sign in</h3>
+  <p class="d">Passwordless. A code by email, or a passkey if this device has one.</p>
+
+  <div id="step-email">
+    <label for="em">Work email</label>
+    <input id="em" type="email" autocomplete="username webauthn" placeholder="you@company.com" required>
+    <p class="d sm">Your tenant is derived from the domain, so colleagues land in the same workspace.</p>
+    <button class="btn full" id="send" type="button"><svg class="ic"><use href="#i-mail"/></svg>Email me a code</button>
+    <button class="btn ghost full" id="pk" type="button"><svg class="ic"><use href="#i-key"/></svg>Use a passkey</button>
+  </div>
+
+  <div id="step-code" hidden>
+    <label for="cd">Six-digit code</label>
+    <input id="cd" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
+    <button class="btn full" id="verify" type="button">Verify</button>
+    <button class="lnk" id="back" type="button">Use a different email</button>
+  </div>
+
+  <p class="msg" id="msg" role="status"></p>
+  <p class="d sm fine">Self-hosted installs print the code to the server log until an email
+  provider is configured — see <span class="mono">cloud/README.md</span>.</p>
+</dialog>
+
+<footer><div class="row">
+  <span>session-viz · MIT · built on the transcripts Claude Code already writes</span>
+  <span class="sp"></span>
+  <a class="gh" href="https://github.com/QSchlegel/qs-plugins"><svg class="ic"><use href="#i-github"/></svg>GitHub</a>
+  <a class="gh" href="#start"><svg class="ic"><use href="#i-book"/></svg>Docs</a>
+  <a class="gh" href="#pricing"><svg class="ic"><use href="#i-plug"/></svg>MCP</a>
+  <a class="gh" href="mailto:hello@session-viz.com"><svg class="ic"><use href="#i-mail"/></svg>Contact</a>
+</div>
+<p class="dim" style="margin:14px 0 0;font-size:12.5px">Figures on this page are measured from one real 60-day
+corpus of 1,166 runs, except where a caption says otherwise.</p></footer>
+
+</div>
+
+<script>
+// The hero strip is generated rather than hand-drawn so its distribution stays
+// the measured one: 528 structured, 402 prose, 199 unresolved, 22 truncated,
+// 7 infra, 5 zombie, 3 abandoned out of 1,166 — sampled down to 680 cells.
+// Built with DOM methods rather than innerHTML: nothing here is user input, but
+// a page that ships a string-to-markup habit teaches the wrong pattern.
+(() => {
+  const g = document.getElementById('strip')
+  if (!g) return
+  const NS = 'http://www.w3.org/2000/svg'
+  const mix = [
+    ['var(--cell-struct)', 0.453], ['var(--cell-prose)', 0.345], ['hatch', 0.171],
+    ['var(--warn)', 0.019], ['var(--bad)', 0.0043], ['var(--accent)', 0.0026],
+  ]
+  const COLS = 85, ROWS = 8, P = 12, S = 9
+  // Deterministic LCG: a hero that reshuffles on every load would change under
+  // the reader, and would make two screenshots of the same page disagree.
+  let seed = 1166
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  const parts = {}
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      let x = rnd(), pick = mix[0][0]
+      for (const [col, w] of mix) { if (x < w) { pick = col; break } x -= w }
+      ;(parts[pick] ||= []).push(`M${c * P} ${r * P}h${S}v${S}h-${S}z`)
+    }
+  }
+  for (const [col, d] of Object.entries(parts)) {
+    const path = document.createElementNS(NS, 'path')
+    path.setAttribute('d', d.join(''))
+    if (col === 'hatch') {
+      path.setAttribute('fill', 'none')
+      path.setAttribute('stroke', 'var(--hatch)')
+      path.setAttribute('stroke-width', '1')
+      path.setAttribute('opacity', '.55')
+    } else {
+      path.setAttribute('fill', col)
+      path.setAttribute('opacity', col === 'var(--cell-prose)' ? '.72' : '.9')
+    }
+    g.appendChild(path)
+  }
+})()
+
+// ---------------------------------------------------------------- iso planes
+// The two planes drawn as actual planes in space. Isometric, not perspective:
+// parallel edges stay parallel, so a slab's size does not change with depth and
+// nothing in the picture implies a measurement that was not taken. The counts
+// on each surface are the real ones.
+;(() => {
+  const root = document.getElementById('isoroot')
+  if (!root) return
+  const NS = 'http://www.w3.org/2000/svg'
+  const C = Math.cos(Math.PI / 6), S = Math.sin(Math.PI / 6)   // 30 degrees
+  const OX = 430, OY = 176
+  const iso = (x, y, z) => [OX + (x - y) * C, OY + (x + y) * S - z]
+  const W = 300, D = 200, TH = 13                              // footprint and slab thickness
+
+  const el = (n, a = {}, parent = root) => {
+    const e = document.createElementNS(NS, n)
+    for (const [k, v] of Object.entries(a)) e.setAttribute(k, v)
+    parent.appendChild(e)
+    return e
+  }
+  const poly = (pts, a, parent) => el('polygon', { points: pts.map((p) => p.join(',')).join(' '), ...a }, parent)
+
+  // A slab: top face plus the two visible side faces, shaded by orientation so
+  // the eye reads thickness rather than a flat outline.
+  const slab = (z, tint, cls, parent) => {
+    const g = el('g', { class: cls }, parent)
+    const lift = el('g', { class: 'lift' }, g)
+    const t = [iso(0, 0, z), iso(W, 0, z), iso(W, D, z), iso(0, D, z)]
+    const b = [iso(0, 0, z - TH), iso(W, 0, z - TH), iso(W, D, z - TH), iso(0, D, z - TH)]
+    poly([t[3], t[2], b[2], b[3]], { fill: tint, 'fill-opacity': '.30', stroke: tint, 'stroke-opacity': '.55' }, lift)
+    poly([t[1], t[2], b[2], b[1]], { fill: tint, 'fill-opacity': '.44', stroke: tint, 'stroke-opacity': '.55' }, lift)
+    poly(t, { fill: tint, 'fill-opacity': '.10', stroke: tint, 'stroke-width': '1.4' }, lift)
+    return { g, lift, top: t }
+  }
+  // A small extruded block sitting on a plane — used for vaults and task cards.
+  const block = (x, y, z, w, d, h, tint, parent, title) => {
+    const t = [iso(x, y, z + h), iso(x + w, y, z + h), iso(x + w, y + d, z + h), iso(x, y + d, z + h)]
+    const b = [iso(x, y, z), iso(x + w, y, z), iso(x + w, y + d, z), iso(x, y + d, z)]
+    poly([t[3], t[2], b[2], b[3]], { fill: tint, 'fill-opacity': '.55' }, parent)
+    poly([t[1], t[2], b[2], b[1]], { fill: tint, 'fill-opacity': '.75' }, parent)
+    const top = poly(t, { fill: tint, 'fill-opacity': '.95' }, parent)
+    if (title) el('title', {}, top).textContent = title
+  }
+  const label = (x, y, text, cls, fill, anchor = 'start') => {
+    const e = el('text', { x, y, class: cls, 'text-anchor': anchor })
+    if (fill) e.setAttribute('fill', fill)
+    e.textContent = text
+    return e
+  }
+
+  const zA = 0, zB = 168
+
+  // ---- plane A: telemetry. 67 cells, one per finding currently in the store.
+  const A = slab(zA, 'var(--ok)', 'plane planeA')
+  // Findings arrive from many autonomous agents. Tint carries the agent family
+  // — the real five — so the plane visibly aggregates a fleet rather than one
+  // producer. The tint is a family, never a person: that is the whole design.
+  // Five distinct hues fractured the plane — it stopped reading as one surface.
+  // Families are strata of the SAME green instead: composition stays visible,
+  // the plane stays one material, and the colour channel stays reserved for
+  // "which agent", never for a person.
+  const tint = (pc) => `color-mix(in srgb, var(--ok) ${pc}%, var(--void))`
+  const FAMS = [
+    ['other', 682, tint(100)], ['verifier', 264, tint(78)],
+    ['scoped-editor', 125, tint(60)], ['note-writer', 26, tint(44)], ['translator', 6, tint(30)],
+  ]
+  const TOTAL = FAMS.reduce((n, f) => n + f[1], 0)
+  const FIND = 70
+  let fi = 0, drawn = 0
+  for (let i = 0; i < FIND; i++) {
+    const col = i % 10, row = Math.floor(i / 10)
+    // allocate cells to families in proportion to their real run counts
+    while (fi < FAMS.length - 1 && drawn >= Math.round((FAMS[fi][1] / TOTAL) * FIND)) { fi++; drawn = 0 }
+    drawn++
+    block(26 + col * 25, 26 + row * 25, zA, 15, 15, 5, FAMS[fi][2], A.lift,
+      `finding from the ${FAMS[fi][0]} agent family — closed schema, no person field`)
+  }
+
+  // ---- plane B: a TEAM. Three people, each owning vaults, with a wikilink
+  // crossing between two of them and a task handed from one to another. The
+  // whole point of this plane is that it spans more than one person.
+  const B = slab(zB, 'var(--accent)', 'plane planeB')
+  const USERS = [
+    { name: 'you',     x: 22,  y: 26,  tint: 'var(--accent)', vaults: [[52, 18], [52, 66]] },
+    { name: 'teammate', x: 132, y: 26, tint: 'var(--m-b)',    vaults: [[160, 18], [160, 66]] },
+    { name: 'teammate', x: 22,  y: 128, tint: 'var(--m-c)',   vaults: [[52, 124]] },
+  ]
+  // A person: a short post with a head, standing ON the plane.
+  const person = (x, y, z, tint, title) => {
+    block(x, y, z, 13, 13, 26, tint, B.lift, title)
+    const h = iso(x + 6.5, y + 6.5, z + 34)
+    const c = el('circle', { cx: h[0], cy: h[1], r: 6.5, fill: tint }, B.lift)
+    el('title', {}, c).textContent = title
+  }
+  USERS.forEach((u) => {
+    person(u.x, u.y, zB, u.tint, `${u.name} — an actor on the collaboration plane`)
+    u.vaults.forEach(([vx, vy], i) =>
+      block(vx, vy, zB, 40, 40, 15, u.tint, B.lift,
+        `vault owned by ${u.name} — titles, tags and links only; bodies stay local`))
+  })
+  // Wikilink resolving ACROSS owners: the federation claim, drawn on the surface.
+  const wl = [iso(92, 38, zB + 15), iso(126, 38, zB + 15), iso(160, 38, zB + 15)]
+  el('path', { d: `M${wl[0][0]} ${wl[0][1]}L${wl[2][0]} ${wl[2][1]}`, fill: 'none',
+    stroke: 'var(--accent)', 'stroke-width': '1.8', 'stroke-dasharray': '5 3', opacity: '.95' }, B.lift)
+  // Annotation lives in the empty air above the slab, with a leader down to the
+  // link it names — on the surface it sat on top of the vaults it describes.
+  const wlm = iso(126, 38, zB + 15)
+  const anchorY = -34
+  el('path', { d: `M${wlm[0]} ${anchorY + 6}L${wlm[0]} ${wlm[1] - 6}`, fill: 'none',
+    stroke: 'var(--accent)', 'stroke-width': '1', 'stroke-dasharray': '2 3', opacity: '.7' }, B.lift)
+  el('circle', { cx: wlm[0], cy: wlm[1] - 3, r: 2.5, fill: 'var(--accent)' }, B.lift)
+  const t = label(wlm[0], anchorY, '[[wikilink]] resolves across owners', 'iso-s', 'var(--accent)', 'middle')
+  B.lift.appendChild(t)
+
+  // Handoff tasks, and one visibly moving from one person to another.
+  const tasks = [[214, 30], [214, 78], [214, 126]]
+  tasks.forEach(([x, y], i) =>
+    block(x, y, zB, 56, 30, 9, 'var(--warn)', B.lift, `handoff task ${i + 1} — offered, accepted or done`))
+  const hs = iso(52, 130, zB + 26), he = iso(214, 46, zB + 12)
+  el('path', { d: `M${hs[0]} ${hs[1]}Q${(hs[0] + he[0]) / 2} ${Math.min(hs[1], he[1]) - 46} ${he[0]} ${he[1]}`,
+    fill: 'none', stroke: 'var(--warn)', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'marker-end': 'url(#ah-w)' }, B.lift)
+
+  // ---- the void: aligned but unconnected.
+  // Four guides rise from A's corners toward B's and stop short, each broken by
+  // a cross. This is the whole argument of the section in one glyph: the planes
+  // are stacked and addressable, and there is still nothing joining them.
+  const void_ = el('g', { class: 'voidg' })
+  const corners = [[0, 0], [W, 0], [W, D], [0, D]]
+  corners.forEach(([cx, cy]) => {
+    const a = iso(cx, cy, zA)
+    const b = iso(cx, cy, zB - TH)
+    const dy = a[1] - b[1]
+    el('line', { x1: a[0], y1: a[1] - dy * 0.10, x2: b[0], y2: b[1] + dy * 0.42,
+      stroke: 'var(--bad)', 'stroke-width': '1', 'stroke-dasharray': '3 4', opacity: '.5' }, void_)
+    el('line', { x1: a[0], y1: a[1] - dy * 0.58, x2: b[0], y2: b[1] + dy * 0.10,
+      stroke: 'var(--bad)', 'stroke-width': '1', 'stroke-dasharray': '3 4', opacity: '.5' }, void_)
+    const mx = a[0], my = a[1] - dy * 0.5
+    el('path', { d: `M${mx - 5} ${my - 5}L${mx + 5} ${my + 5}M${mx + 5} ${my - 5}L${mx - 5} ${my + 5}`,
+      stroke: 'var(--bad)', 'stroke-width': '1.6', opacity: '.9' }, void_)
+  })
+
+  // ---- labels, outside the slabs so they never sit on data
+  label(756, iso(W, 0, zB)[1] + 6, 'PLANE B — COLLABORATION', 'iso-t', 'var(--accent)')
+  label(756, iso(W, 0, zB)[1] + 24, 'identity-bearing, on purpose', 'iso-s')
+  label(756, iso(W, 0, zB)[1] + 44, '3 people · 5 vaults', 'iso-n', 'var(--accent)')
+  label(756, iso(W, 0, zB)[1] + 62, 'tasks handed between them', 'iso-s')
+  label(756, iso(W, 0, zA)[1] - 30, 'PLANE A — TELEMETRY', 'iso-t', 'var(--ok)')
+  label(756, iso(W, 0, zA)[1] - 12, 'person-blind by construction', 'iso-s')
+  label(756, iso(W, 0, zA)[1] + 8, '5 agent families', 'iso-n', 'var(--ok)')
+  label(756, iso(W, 0, zA)[1] + 26, '0 person columns', 'iso-n', 'var(--ok)')
+  label(756, iso(W, 0, zA)[1] + 44, 'colour = which agent, never who', 'iso-s')
+  const midY = (iso(0, D, zA)[1] + iso(0, D, zB)[1]) / 2
+  label(236, midY - 8, 'NO SHARED KEY', 'iso-t', 'var(--bad)', 'end')
+  label(236, midY + 8, 'no foreign key · no join', 'iso-s', null, 'end')
+  label(236, midY + 24, 'boot fails if one appears', 'iso-s', null, 'end')
+
+  // hover: raise the plane under the pointer and recede the other
+  const stage = document.getElementById('stage')
+  const bind = (g, cls) => {
+    g.addEventListener('pointerenter', () => stage.classList.add(cls))
+    g.addEventListener('pointerleave', () => stage.classList.remove(cls))
+  }
+  bind(A.g, 'hoverA'); bind(B.g, 'hoverB')
+
+  // ---- scroll reactivity ------------------------------------------------
+  // Progress is measured off the stage's own position, not a global scroll
+  // offset, so it behaves the same wherever the section ends up on the page.
+  // rAF-coalesced: the listener only records that something moved.
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let queued = false
+    const update = () => {
+      queued = false
+      const r = stage.getBoundingClientRect()
+      const vh = innerHeight || 1
+      // 0 when the top edge is a viewport-height below the fold, 1 once the
+      // stage centre reaches the middle of the screen, then held.
+      const centre = r.top + r.height / 2
+      const p = 1 - Math.min(1, Math.max(0, (centre - vh * 0.5) / (vh * 0.75)))
+      stage.style.setProperty('--p', p.toFixed(3))
+    }
+    const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(update) } }
+    addEventListener('scroll', onScroll, { passive: true })
+    addEventListener('resize', onScroll, { passive: true })
+    update()
+  }
+})()
+</script>
+
+<script>
+// Idle motion for the mark and the hero strip. Both draw from ONE seeded
+// generator: the variation should look random and be identical on every load,
+// so two screenshots of this page agree and a diff of the DOM is stable.
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  let seed = 20260814
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  // Only timing and opacity vary per element. Nothing here can move a tile —
+  // the keyframes touch fill and opacity exclusively.
+  const vary = (el, { dur, delay, opacity }) => {
+    el.style.setProperty('--d', dur + 's')
+    el.style.setProperty('--t', delay + 's')
+    el.style.setProperty('--o', opacity)
+  }
+  // Logo: every plain cell drifts on its own clock. The accent and hollow cells
+  // keep their own animations — they mean something, so they stay legible.
+  document.querySelectorAll('.lg .c:not(.a):not(.h)').forEach((c) => {
+    c.classList.add('idle')
+    vary(c, {
+      dur: (4.2 + rnd() * 4.6).toFixed(2),
+      delay: (rnd() * 3.2).toFixed(2),
+      opacity: (0.5 + rnd() * 0.3).toFixed(2),
+    })
+  })
+  // Hero strip: a sparse subset shimmers, never the whole field. Animating 680
+  // cells would both cost paint and imply the wall is live, which it is not.
+  const cells = [...document.querySelectorAll('.wallstrip svg path')]
+  if (cells.length) {
+    const strip = document.querySelector('.wallstrip svg')
+    strip.classList.add('breathe')
+    cells.forEach((p) => vary(p, {
+      dur: (6 + rnd() * 6).toFixed(2), delay: (rnd() * 5).toFixed(2),
+      opacity: (0.62 + rnd() * 0.25).toFixed(2),
+    }))
+  }
+})()
+
+// Sign-in. Email OTP always; passkey when the browser has WebAuthn. The API
+// base is same-origin by default so a self-hosted copy needs no configuration.
+(() => {
+  const API = (document.documentElement.dataset.api || '').replace(/\/$/, '')
+  const $ = (id) => document.getElementById(id)
+  const dlg = $('auth'), msg = $('msg')
+  const show = (t, cls) => { msg.textContent = t; msg.className = 'msg ' + (cls || '') }
+  const step = (which) => {
+    $('step-email').hidden = which !== 'email'
+    $('step-code').hidden = which !== 'code'
+  }
+  const post = async (path, body) => {
+    const r = await fetch(API + path, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+    return j
+  }
+  const done = (s) => {
+    try { localStorage.setItem('sv-session', s.token) } catch {}
+    show(`Signed in as ${s.email} · tenant ${s.tenant}`, 'ok')
+    setTimeout(() => dlg.close(), 1400)
+  }
+
+  $('signin').onclick = () => { step('email'); show(''); dlg.showModal(); $('em').focus() }
+  $('back').onclick = () => { step('email'); show('') }
+
+  $('send').onclick = async () => {
+    const email = $('em').value.trim()
+    if (!email) return show('Enter an email address', 'err')
+    show('Sending…')
+    try { await post('/v1/auth/otp/start', { email }); step('code'); show('Code sent. It expires in 10 minutes.', 'ok'); $('cd').focus() }
+    catch (e) { show(e.message, 'err') }
+  }
+  $('verify').onclick = async () => {
+    try { done(await post('/v1/auth/otp/verify', { email: $('em').value.trim(), code: $('cd').value.trim() })) }
+    catch (e) { show(e.message, 'err') }
+  }
+  $('cd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('verify').click() })
+  $('em').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('send').click() })
+
+  // Passkeys degrade honestly: the button says why it is unavailable rather
+  // than failing at the point of use.
+  if (!window.PublicKeyCredential) {
+    $('pk').disabled = true
+    $('pk').title = 'This browser has no WebAuthn support'
+    $('pk').style.opacity = '.5'
+  } else {
+    $('pk').onclick = async () => {
+      const email = $('em').value.trim()
+      if (!email) return show('Enter your email first — it identifies the account', 'err')
+      show('Waiting for your device…')
+      try {
+        const ch = await post('/v1/auth/passkey/challenge', { email, kind: 'login' })
+        const cred = await navigator.credentials.get({
+          publicKey: {
+            challenge: Uint8Array.from(atob(ch.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)),
+            rpId: ch.rpId, userVerification: 'preferred', timeout: 60000,
+          },
+        })
+        const b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        done(await post('/v1/auth/passkey/login', {
+          challengeId: ch.challengeId,
+          credential: {
+            id: cred.id,
+            response: {
+              clientDataJSON: b64(cred.response.clientDataJSON),
+              authenticatorData: b64(cred.response.authenticatorData),
+              signature: b64(cred.response.signature),
+            },
+          },
+        }))
+      } catch (e) {
+        show(e.name === 'NotAllowedError' ? 'Cancelled, or no passkey for this site yet.' : e.message, 'err')
+      }
+    }
+  }
+})()
+</script>
+</body></html>

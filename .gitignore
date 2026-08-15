@@ -1,3 +1,21 @@
-.DS_Store
-.claude/worktrees/
 node_modules/
+.DS_Store
+*.log
+
+# Local secrets — never committed. Tokens live here and in the platform's
+# own variable store, nowhere else.
+.tokens.local
+*.tokens.local
+.env
+.env.*
+
+# Generated reports and previews. They contain verbatim prompt excerpts from
+# real sessions, so they must not reach a remote by accident.
+.control-preview.html
+.landing-preview.html
+.qtrends-preview.html
+.admin-remote.html
+qtrends-*.html
+qpact-*.html
+telemetry.json
+embed.json

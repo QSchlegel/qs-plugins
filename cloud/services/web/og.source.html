@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{--bg:#16151a;--ink:#ece9e4;--muted:#9b968d;--accent:#ff8a4c;--ok:#6fbf8e;
+--struct:#4c8a63;--prose:#8a93a1;--hatch:#6d6878;--warn:#e0b055;--bad:#ff6b5e;
+--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box;margin:0}
+body{width:1200px;height:630px;background:var(--bg);color:var(--ink);overflow:hidden;
+ font:400 16px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Inter,sans-serif;position:relative}
+.pad{padding:62px 68px}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:44px}
+.brand .m{display:grid;grid-template-columns:repeat(3,14px);grid-auto-rows:14px;gap:3px}
+.brand .m i{border-radius:2px;background:var(--struct)}
+.brand .m i.a{background:var(--accent)}
+.brand .m i.h{background:none;border:1.5px solid var(--hatch)}
+.brand b{font:700 21px/1 var(--mono);letter-spacing:.16em}
+.brand b em{color:var(--accent);font-style:normal}
+h1{font-size:70px;line-height:1.03;letter-spacing:-.03em;max-width:15ch;font-weight:700}
+h1 em{font-style:normal;color:var(--accent)}
+p.l{margin-top:22px;font-size:23px;color:var(--muted);max-width:36ch;line-height:1.45}
+.strip{position:absolute;right:-24px;top:126px;width:600px;height:372px;opacity:.95}
+.foot{position:absolute;left:68px;bottom:52px;display:flex;gap:30px;
+ font:600 15px/1 var(--mono);letter-spacing:.06em;color:var(--muted)}
+.foot b{color:var(--ok)} .foot i{color:var(--bad);font-style:normal}
+</style></head><body>
+<div class="pad">
+  <div class="brand"><div class="m">
+    <i></i><i></i><i class="a"></i><i></i><i></i><i class="h"></i><i></i><i></i><i></i>
+  </div><b>SESSION<em>·</em>VIZ</b></div>
+  <h1>Measure your <em>agents</em>, not your people.</h1>
+  <p class="l">Observability for Claude Code sessions and autonomous agents — with no person column.</p>
+</div>
+<svg class="strip" viewBox="0 0 600 372" preserveAspectRatio="xMidYMid slice">
+  <defs><linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+    <stop offset=".30" stop-color="#fff" stop-opacity="1"/>
+  </linearGradient>
+  <mask id="m"><rect width="600" height="372" fill="url(#fade)"/></mask></defs>
+  <g id="s" mask="url(#m)"></g>
+</svg>
+<div class="foot">
+  <span><b>1,166</b> runs measured</span><span><b>0</b> person columns</span><span><i>199</i> left unresolved, not guessed</span>
+</div>
+<script>
+const NS='http://www.w3.org/2000/svg',g=document.getElementById('s');
+const mix=[['var(--struct)',.453],['var(--prose)',.345],['hatch',.171],['var(--warn)',.019],['var(--bad)',.0043],['var(--accent)',.0026]];
+let seed=1166; const rnd=()=>((seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff);
+const parts={};
+for(let r=0;r<23;r++)for(let c=0;c<38;c++){let x=rnd(),pick=mix[0][0];
+ for(const[col,w]of mix){if(x<w){pick=col;break}x-=w}
+ (parts[pick]||=[]).push('M'+(c*16)+' '+(r*16)+'h12v12h-12z')}
+for(const[col,d]of Object.entries(parts)){const p=document.createElementNS(NS,'path');
+ p.setAttribute('d',d.join(''));
+ if(col==='hatch'){p.setAttribute('fill','none');p.setAttribute('stroke','var(--hatch)');p.setAttribute('stroke-width','1.2');p.setAttribute('opacity','.6')}
+ else{p.setAttribute('fill',col);p.setAttribute('opacity',col==='var(--prose)'?'.7':'.9')}
+ g.appendChild(p)}
+</script></body></html>
